@@ -1,0 +1,11 @@
+{
+  "id": "com.company.indesign.framework",
+  "name": "InDesignAutomation",
+  "version": "1.0.0",
+  "description": "Headless InDesign layout and automation framework",
+  "mainScript": "src/targets/script/index.ts",
+  "mainPlugin": "src/targets/plugin/panel.ts",
+  "permissions": {
+    "clipboard": "readAndWrite"
+  }
+}

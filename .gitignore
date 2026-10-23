@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build distributions
+dist/
+*.tgz
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# Logs & Diagnostics
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.system_generated/
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo

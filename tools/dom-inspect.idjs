@@ -1,0 +1,85 @@
+const { app } = require("indesign");
+
+(function inspect() {
+  if (!app.documents || app.documents.length === 0) {
+    console.log("DOM Inspect: No document open.");
+    return;
+  }
+
+  const selection = app.selection;
+  if (!selection || selection.length === 0) {
+    console.log("DOM Inspect: Nothing selected.");
+    return;
+  }
+
+  function safeGet(obj, prop, fallback = null) {
+    try {
+      const val = obj[prop];
+      return val !== undefined ? val : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  const snapshots = [];
+
+  for (let i = 0; i < selection.length; i++) {
+    const item = selection[i];
+    if (!item) continue;
+
+    const constructorName = safeGet(item.constructor, "name", "Unknown");
+    const dump = {
+      index: i,
+      constructorName,
+      id: safeGet(item, "id"),
+      name: safeGet(item, "name"),
+      geometricBounds: safeGet(item, "geometricBounds"),
+      visibleBounds: safeGet(item, "visibleBounds"),
+      properties: {}
+    };
+
+    const inspectKeys = [
+      "contents",
+      "pointSize",
+      "appliedFont",
+      "fontStyle",
+      "fillColor",
+      "strokeColor",
+      "strokeWeight",
+      "overflows",
+      "locked",
+      "parentStory"
+    ];
+
+    for (const key of inspectKeys) {
+      const val = safeGet(item, key);
+      if (val !== null && val !== undefined) {
+        if (key === "parentStory" && typeof val === "object") {
+          dump.properties["parentStoryId"] = safeGet(val, "id");
+        } else if (typeof val === "object" && val.name) {
+          dump.properties[key] = val.name;
+        } else {
+          dump.properties[key] = String(val);
+        }
+      }
+    }
+
+    // Check layer and parent
+    const layer = safeGet(item, "itemLayer");
+    if (layer) {
+      dump.properties["layer"] = safeGet(layer, "name");
+      dump.properties["layerLocked"] = safeGet(layer, "locked");
+    }
+
+    const parent = safeGet(item, "parent");
+    if (parent && parent.constructor) {
+      dump.properties["parentType"] = safeGet(parent.constructor, "name");
+    }
+
+    snapshots.push(dump);
+  }
+
+  console.log("--- SELECTION SNAPSHOT ---");
+  console.log(JSON.stringify(snapshots.length === 1 ? snapshots[0] : snapshots, null, 2));
+})();
+

@@ -1,0 +1,26 @@
+{
+  "ENVIRONMENT": "InDesign_UXP_v18+ (TypeScript_ES2020, NOT ExtendScript, NOT Web DOM)",
+  "FRAMEWORK_INVARIANTS": {
+    "BASE_CLASS": "All domain services MUST extend BaseService<TOptions, TReport>",
+    "TRANSACTION": "Strictly synchronous inside process(). Handled by BaseService",
+    "UNITS": "Locked to POINTS and PAGE_ORIGIN automatically via BaseService",
+    "DOM_MUTATION": "Snapshot via .everyItem().getElements(); loop backwards if mutating items or replacing text/GREP",
+    "ELEMENT_GUARD": "Must check isElementEditable(item) before modifying contents/geometry/styles",
+    "TEXT_LAYOUT": "Always call doc.recompose() prior to inspecting .overflows or lines",
+    "SELECTION": "Always pass raw selection through SelectionResolver.resolve()",
+    "CREATION": "Use DomResolver.getOrCreateColor / getOrCreateLayer (no direct .add())",
+    "SEARCH": "Wrap GREP/Text queries in withFindChangeScope()",
+    "PATHS": "Use PathUtils for all path operations"
+  },
+  "BANNED": [
+    "Folder",
+    "File",
+    "$.writeln",
+    "app.doScript(..., JAVASCRIPT)",
+    "alert()",
+    "window",
+    "document",
+    "itemByName without .isValid",
+    "doc.allPageItems"
+  ]
+}
