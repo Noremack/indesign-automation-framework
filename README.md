@@ -31,7 +31,7 @@ This toolkit provides the core architectural foundation, invariants, offline tes
 ### 1. Installation
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Noremack/indesign-automation-framework.git
 cd indesign-automation-framework
 npm install
 ```

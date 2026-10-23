@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "Production-grade, packagable InDesign UXP automation framework and AI toolkit.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noremack/indesign-automation-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Noremack/indesign-automation-framework/issues"
+  },
+  "homepage": "https://github.com/Noremack/indesign-automation-framework#readme",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
