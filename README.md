@@ -24,7 +24,7 @@ This toolkit provides the core architectural foundation, invariants, offline tes
 - **Service Archetypes (`npm run scaffold`)**: Scaffold specialized domain templates for Layout transformations, Text/GREP replacements, or Document Hygiene.
 - **Non-Destructive Simulation (`dryRun`)**: First-class `dryRun` mode in `BaseBatchOptions` to preview mutations and report affected items without modifying documents.
 - **Clipboard Notice & Usability**: Full transparency policy—never writes to system clipboard silently. All operations provide prominent notices (`[Notice] ...`) and respect `autoCopyDiagnostics: false`.
-- **Interactive Intake Wizard (`npm run prompt:new`)**: Interactive CLI wizard for 4-point questionnaire intake, standard presets, and token-budgeted prompt assembly.
+- **Interactive Intake Wizard (`npm run prompt:new`)**: Interactive CLI wizard for 5-point questionnaire intake, standard presets, and token-budgeted prompt assembly.
 - **One-Command Test Failure Healing (`npm run test:fix`)**: Automatically runs tests, catches failures, extracts failing service AST context, and packs an AI repair prompt with notice.
 - **AI-Assisted Development Tools**:
   - `tools/prompt-wizard.mjs`: Interactive prompt intake wizard with clipboard snapshot detection.
@@ -103,7 +103,7 @@ npm run test:unit
 
 | Command | Purpose |
 |---|---|
-| `npm run prompt:new` | Interactive CLI wizard for 4-point intake, presets, and token-capped prompt assembly |
+| `npm run prompt:new` | Interactive CLI wizard for 5-point intake, presets, and token-capped prompt assembly |
 | `npm run prompt:fix` | Converts clipboard error diagnostics or logs into self-healing AI repair prompts |
 | `npm run test:fix` | Runs test suite and automatically generates an AI repair prompt on any failure with notice |
 | `npm run lint:invariants` | Static AST scanner that validates code against InDesign UXP invariants and banned APIs |
@@ -178,43 +178,50 @@ export interface ServiceResult<T> { success: boolean; data?: T; error?: Framewor
 }
 
 [TASK]
-// Your specific requirement answered against the 4-Point Intake Questionnaire:
+// Your specific requirement answered against the 5-Point Intake Questionnaire:
 1. Target Scope: [B] Current Active Page
-2. Style Overrides: [C] Isolate character styles, clear paragraph overrides
-3. Geometry: [D] Not applicable
-4. Failure Policy: [B] Permissive (skip locked items and report)
+2. Target Filter: [A] Text Frames Only
+3. Style Overrides: [C] Isolate character styles, clear paragraph overrides
+4. Geometry: [D] Not applicable
+5. Failure Policy: [B] Permissive (skip locked items and report)
 
 Task: Implement a service that identifies all single-line headline text frames, clears paragraph overrides while preserving character italics, and reports processed count.
 ```
 
 ---
 
-### The Mandatory 4-Point Intake Questionnaire & Presets (Rule Zero)
+### The Mandatory 5-Point Intake Questionnaire & Presets (Rule Zero)
 
 Whenever prompting an AI model for new services or modifying existing logic, you can specify individual parameters or simply invoke a **Standard Preset** to eliminate prompt friction:
 
 #### Standard Presets (Fast Prompting)
-* **Default Safe Preset** (`default preset`): `1C, 2A, 3D, 4B` — Active Spread, Preserve Overrides, No Geometry, Permissive Failure.
-* **Page Strict Preset** (`page strict`): `1B, 2A, 3D, 4A` — Active Page, Preserve Overrides, No Geometry, Strict Abort.
-* **Doc Hygiene Preset** (`doc hygiene`): `1D, 2B, 3D, 4B` — Entire Document, Clear Overrides, No Geometry, Permissive Failure.
+* **Default Safe Preset** (`default preset`): `1C, 2A, 3A, 4D, 5B` — Active Spread, Text Frames Only, Preserve Overrides, No Geometry, Permissive Failure.
+* **Page Strict Preset** (`page strict`): `1B, 2C, 3A, 4D, 5A` — Active Page, All Page Items, Preserve Overrides, No Geometry, Strict Abort.
+* **Doc Hygiene Preset** (`doc hygiene`): `1D, 2A, 3B, 4D, 5B` — Entire Document, Text Frames Only, Clear Overrides, No Geometry, Permissive Failure.
 
-#### 4-Point Questionnaire Breakdown
+#### 5-Point Questionnaire Breakdown
 1. **Target Scope**:
    * `[A]` Active Selection *(Attach `dom-inspect.idjs` JSON snapshot)*
    * `[B]` Current Active Page
    * `[C]` Current Active Spread
    * `[D]` Entire Document *(Processed hierarchically spread-by-spread for memory safety)*
-2. **Typographic & Style Override Policy**:
+2. **Target Element Filter**:
+   * `[A]` Text Frames Only
+   * `[B]` Graphic / Image Frames Only (Rectangles, Ovals, Polygons)
+   * `[C]` All Page Items
+   * `[D]` Tables & Cells
+   * `[E]` Specific Layer or Object Style
+3. **Typographic & Style Override Policy**:
    * `[A]` Preserve all local character and paragraph overrides
    * `[B]` Clear all local overrides (Reset to applied style)
    * `[C]` Isolate character styles, reset paragraph overrides only
    * `[D]` Not applicable (No text manipulation)
-3. **Geometric Normalization**:
+4. **Geometric Normalization**:
    * `[A]` Relative delta in Points (e.g., `+12 pt` horizontal shift)
    * `[B]` Absolute dimensions in Points `[y1, x1, y2, x2]`
    * `[C]` Snap to active page margins
    * `[D]` Not applicable (No layout changes)
-4. **Failure & Transaction Boundary**:
+5. **Failure & Transaction Boundary**:
    * `[A]` Strict: Abort entire transaction and roll back if any single element fails
    * `[B]` Permissive: Skip locked or uneditable elements, record in `ServiceResult`, and continue
 

@@ -6,24 +6,27 @@ import { readClipboardText, writeClipboardText } from "./prompt-fix.mjs";
 const PRESETS = {
   "1": {
     name: "Default Safe Preset",
-    code: "1C, 2A, 3D, 4B (Active Spread, Preserve Overrides, No Geometry, Permissive)",
+    code: "1C, 2A, 3A, 4D, 5B (Active Spread, Text Frames Only, Preserve Overrides, No Geometry, Permissive)",
     scope: "Active Spread",
+    target: "Text Frames Only",
     overrides: "Preserve all",
     geometry: "N/A",
     failure: "Permissive"
   },
   "2": {
     name: "Page Strict Preset",
-    code: "1B, 2A, 3D, 4A (Active Page, Preserve Overrides, No Geometry, Strict Abort)",
+    code: "1B, 2C, 3A, 4D, 5A (Active Page, All Page Items, Preserve Overrides, No Geometry, Strict Abort)",
     scope: "Active Page",
+    target: "All Page Items",
     overrides: "Preserve all",
     geometry: "N/A",
     failure: "Strict Abort"
   },
   "3": {
     name: "Doc Hygiene Preset",
-    code: "1D, 2B, 3D, 4B (Entire Document, Clear Overrides, No Geometry, Permissive)",
+    code: "1D, 2A, 3B, 4D, 5B (Entire Document, Text Frames Only, Clear Overrides, No Geometry, Permissive)",
     scope: "Entire Document",
+    target: "Text Frames Only",
     overrides: "Clear all",
     geometry: "N/A",
     failure: "Permissive"
@@ -39,11 +42,12 @@ function askQuestion(rl, query) {
  */
 export async function runPromptWizard(injectedAnswers = null) {
   console.log("================================================================================");
-  console.log("InDesign Automation Framework - Interactive Prompt Intake Wizard");
+  console.log("InDesign Automation Framework - Interactive Prompt Intake Wizard (5-Point)");
   console.log("================================================================================");
 
   let presetChoice = "";
   let scope = "";
+  let target = "";
   let overrides = "";
   let geometry = "";
   let failure = "";
@@ -60,19 +64,20 @@ export async function runPromptWizard(injectedAnswers = null) {
 
     try {
       console.log("\nSelect standard preset (Rule Zero):");
-      console.log("  [1] Default Safe  - Active Spread, Preserve Overrides, Permissive (Recommended)");
-      console.log("  [2] Page Strict   - Active Page, Preserve Overrides, Strict Abort");
-      console.log("  [3] Doc Hygiene   - Entire Document, Clear Overrides, Permissive");
-      console.log("  [4] Custom Intake - Specify all 4 parameters individually\n");
+      console.log("  [1] Default Safe  - Active Spread, Text Frames Only, Preserve Overrides, Permissive (Recommended)");
+      console.log("  [2] Page Strict   - Active Page, All Page Items, Preserve Overrides, Strict Abort");
+      console.log("  [3] Doc Hygiene   - Entire Document, Text Frames Only, Clear Overrides, Permissive");
+      console.log("  [4] Custom Intake - Specify all 5 parameters individually\n");
 
       presetChoice = (await askQuestion(rl, "Choose option [1-4] (default: 1): ")).trim() || "1";
 
       if (presetChoice === "4") {
-        console.log("\n--- Custom 4-Point Intake ---");
+        console.log("\n--- Custom 5-Point Intake ---");
         scope = (await askQuestion(rl, "1. Scope ([A] Selection, [B] Page, [C] Spread, [D] Document): ")).trim().toUpperCase() || "C";
-        overrides = (await askQuestion(rl, "2. Overrides ([A] Preserve, [B] Clear all, [C] Clear para only, [D] N/A): ")).trim().toUpperCase() || "A";
-        geometry = (await askQuestion(rl, "3. Geometry ([A] Delta pts, [B] Absolute pts, [C] Margins, [D] N/A): ")).trim().toUpperCase() || "D";
-        failure = (await askQuestion(rl, "4. Failure Policy ([A] Strict Abort, [B] Permissive): ")).trim().toUpperCase() || "B";
+        target = (await askQuestion(rl, "2. Target Filter ([A] Text Frames, [B] Graphic Frames, [C] All Page Items, [D] Tables, [E] Layer/Style): ")).trim().toUpperCase() || "A";
+        overrides = (await askQuestion(rl, "3. Overrides ([A] Preserve, [B] Clear all, [C] Clear para only, [D] N/A): ")).trim().toUpperCase() || "A";
+        geometry = (await askQuestion(rl, "4. Geometry ([A] Delta pts, [B] Absolute pts, [C] Margins, [D] N/A): ")).trim().toUpperCase() || "D";
+        failure = (await askQuestion(rl, "5. Failure Policy ([A] Strict Abort, [B] Permissive): ")).trim().toUpperCase() || "B";
       }
 
       task = (await askQuestion(rl, "\nDescribe the domain automation task: ")).trim();
@@ -89,7 +94,7 @@ export async function runPromptWizard(injectedAnswers = null) {
     const p = PRESETS[presetChoice];
     intakeSummary = `Preset: ${p.name} [${p.code}]`;
   } else {
-    intakeSummary = `Scope: [${scope}], Overrides: [${overrides}], Geometry: [${geometry}], Failure: [${failure}]`;
+    intakeSummary = `Scope: [${scope}], Target: [${target}], Overrides: [${overrides}], Geometry: [${geometry}], Failure: [${failure}]`;
   }
 
   // Check if clipboard contains a selection snapshot from dom-inspect.idjs

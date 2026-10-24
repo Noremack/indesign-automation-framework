@@ -33,7 +33,6 @@
     "AI_MANIFESTO.json",
     "antigravity.rules.json",
     "app.config.json",
-    "setup-framework.mjs",
     "README.md"
   ],
   "bin": {

@@ -149,7 +149,7 @@ describe("Support Tools & Adapters", () => {
 
       expect(result.prompt).toContain("Default Safe Preset");
       expect(result.prompt).toContain("Align headline frames to top margin");
-      expect(result.intakeSummary).toContain("1C, 2A, 3D, 4B");
+      expect(result.intakeSummary).toContain("1C, 2A, 3A, 4D, 5B");
     });
   });
 

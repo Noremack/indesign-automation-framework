@@ -37,12 +37,16 @@ export type FailurePolicy = "strict" | "permissive";
 
 export type ExecutionScope = "selection" | "page" | "spread" | "document";
 
+export type TargetFilter = "all" | "text_frames" | "graphic_frames" | "tables" | "custom";
+
 export interface BaseBatchOptions {
   onProgress?: ProgressCallback;
   failurePolicy?: FailurePolicy;
   scope?: ExecutionScope;
+  targetFilter?: TargetFilter;
   notifyOnCompletion?: boolean;
   dryRun?: boolean;
   autoCopyDiagnostics?: boolean;
 }
+
 

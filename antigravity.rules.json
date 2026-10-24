@@ -4,7 +4,7 @@
   "runtime": "InDesign_UXP_v18+",
   "compiler": "TypeScript_ES2020",
   "directives": [
-    "RULE_ZERO: If a prompt lacks scope, override policy, geometry units, or failure policy, allow preset invocation (e.g., 'default preset') or request clarification via the 4-point questionnaire.",
+    "RULE_ZERO: If a prompt lacks scope, target element filter, override policy, geometry units, or failure policy, allow preset invocation (e.g., 'default preset') or request clarification via the 5-point questionnaire.",
     "ARCHITECTURE: All domain services MUST extend BaseService<TOptions, TReport>. Do not create freestanding scripts.",
     "TRANSACTIONS: Implement purely synchronous logic inside process(). Never use async/await within transaction boundaries.",
     "DOM_MUTATION: Use snapshotting via .everyItem().getElements() or iterate backwards. Never mutate live collections in forward loops. Always iterate backwards when replacing text or GREP matches.",
@@ -18,16 +18,17 @@
     "PIPELINE: Chain multi-service batch operations using PipelineService within a single atomic host transaction."
   ],
   "presets": {
-    "default_safe": "1C, 2A, 3D, 4B (Active Spread, Preserve Overrides, No Geometry, Permissive)",
-    "page_strict": "1B, 2A, 3D, 4A (Active Page, Preserve Overrides, No Geometry, Strict Abort)",
-    "doc_hygiene": "1D, 2B, 3D, 4B (Entire Document, Clear Overrides, No Geometry, Permissive)"
+    "default_safe": "1C, 2A, 3A, 4D, 5B (Active Spread, Text Frames Only, Preserve Overrides, No Geometry, Permissive)",
+    "page_strict": "1B, 2C, 3A, 4D, 5A (Active Page, All Page Items, Preserve Overrides, No Geometry, Strict Abort)",
+    "doc_hygiene": "1D, 2A, 3B, 4D, 5B (Entire Document, Text Frames Only, Clear Overrides, No Geometry, Permissive)"
   },
   "intake_questionnaire": [
-    "Quick Option: Reply 'default preset' to use: Active Spread, Preserve Overrides, Permissive Failure.",
+    "Quick Option: Reply 'default preset' to use: Active Spread, Text Frames Only, Preserve Overrides, Permissive Failure.",
     "1. Scope: [A] Selection (needs dom-inspect.idjs) [B] Active Page [C] Active Spread [D] Entire Document",
-    "2. Overrides: [A] Preserve all [B] Clear all [C] Isolate character styles, clear para [D] N/A",
-    "3. Geometry: [A] Relative delta in Points [B] Absolute Points [y1,x1,y2,x2] [C] Snap to margins [D] N/A",
-    "4. Failure: [A] Strict Abort (revert transaction) [B] Permissive (skip & report)"
+    "2. Target Filter: [A] Text Frames Only [B] Graphic/Image Frames [C] All Page Items [D] Tables/Cells [E] Specific Layer/Style",
+    "3. Overrides: [A] Preserve all [B] Clear all [C] Isolate character styles, clear para [D] N/A",
+    "4. Geometry: [A] Relative delta in Points [B] Absolute Points [y1,x1,y2,x2] [C] Snap to margins [D] N/A",
+    "5. Failure: [A] Strict Abort (revert transaction) [B] Permissive (skip & report)"
   ],
   "output_policy": {
     "prefer_diffs": true,

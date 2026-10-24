@@ -30,18 +30,19 @@ This repository is a production-grade, packagable automation framework and AI-as
 
 ## 2. Mandatory Intake Questionnaire & Presets (Rule Zero)
 
-If a user request lacks scope, override policy, geometry units, or failure policy, clarify the 4 points before generating code, or allow invocation via standard presets:
+If a user request lacks scope, target element filter, override policy, geometry units, or failure policy, clarify the 5 points before generating code, or allow invocation via standard presets:
 
 ### Standard Presets (Quick Prompting)
-- **Default Safe Preset** (`default preset`): `1C, 2A, 3D, 4B` (Active Spread, Preserve Overrides, No Geometry, Permissive)
-- **Page Strict Preset** (`page strict`): `1B, 2A, 3D, 4A` (Active Page, Preserve Overrides, No Geometry, Strict Abort)
-- **Doc Hygiene Preset** (`doc hygiene`): `1D, 2B, 3D, 4B` (Entire Document, Clear Overrides, No Geometry, Permissive)
+- **Default Safe Preset** (`default preset`): `1C, 2A, 3A, 4D, 5B` (Active Spread, Text Frames Only, Preserve Overrides, No Geometry, Permissive)
+- **Page Strict Preset** (`page strict`): `1B, 2C, 3A, 4D, 5A` (Active Page, All Page Items, Preserve Overrides, No Geometry, Strict Abort)
+- **Doc Hygiene Preset** (`doc hygiene`): `1D, 2A, 3B, 4D, 5B` (Entire Document, Text Frames Only, Clear Overrides, No Geometry, Permissive)
 
-### 4-Point Intake Questionnaire
+### 5-Point Intake Questionnaire
 1. **Scope**: [A] Selection [B] Active Page [C] Active Spread [D] Entire Document
-2. **Overrides**: [A] Preserve all [B] Clear all [C] Isolate character styles, clear para [D] N/A
-3. **Geometry**: [A] Relative delta in Points [B] Absolute Points [y1,x1,y2,x2] [C] Snap to margins [D] N/A
-4. **Failure**: [A] Strict Abort (revert transaction) [B] Permissive (skip & report)
+2. **Target Filter**: [A] Text Frames Only [B] Graphic/Image Frames [C] All Page Items [D] Tables/Cells [E] Specific Layer/Style
+3. **Overrides**: [A] Preserve all [B] Clear all [C] Isolate character styles, clear para [D] N/A
+4. **Geometry**: [A] Relative delta in Points [B] Absolute Points [y1,x1,y2,x2] [C] Snap to margins [D] N/A
+5. **Failure**: [A] Strict Abort (revert transaction) [B] Permissive (skip & report)
 
 ---
 
@@ -49,7 +50,7 @@ If a user request lacks scope, override policy, geometry units, or failure polic
 
 | Command | Description |
 |---|---|
-| `npm run prompt:new` | Interactive CLI wizard for 4-point intake, presets, and token-capped prompt assembly |
+| `npm run prompt:new` | Interactive CLI wizard for 5-point intake, presets, and token-capped prompt assembly |
 | `npm run prompt:fix` | Assembles a self-healing AI prompt from clipboard error diagnostics, logs, or stack traces |
 | `npm run test:fix` | Runs test suite and automatically generates an AI repair prompt on any failure with notice |
 | `npm run lint:invariants` | Static AST scanner that validates code against InDesign UXP invariants and banned APIs |
