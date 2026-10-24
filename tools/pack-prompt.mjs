@@ -36,6 +36,25 @@ export function packPrompt({
     }
   }
 
+  const telemetryPath = path.resolve(".framework/telemetry.jsonl");
+  if (fs.existsSync(telemetryPath)) {
+    try {
+      const lines = fs.readFileSync(telemetryPath, "utf8").split("\n").filter(Boolean);
+      const counts = {};
+      for (const line of lines) {
+        const e = JSON.parse(line);
+        if (e.code && e.code !== "ERR_UNKNOWN") counts[e.code] = (counts[e.code] || 0) + 1;
+      }
+      const topCodes = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 2);
+      if (topCodes.length > 0) {
+        payload += `\n\n[HISTORICAL_ROADBLOCKS_TO_AVOID]\n`;
+        for (const [code, count] of topCodes) {
+          payload += `- ${code} (${count} previous failure(s) recorded in telemetry. Guard against this!).\n`;
+        }
+      }
+    } catch (_) {}
+  }
+
   payload += `\n\n[TASK]\n${taskDescription}`;
 
   if (payload.length > charLimit) {

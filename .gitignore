@@ -17,6 +17,7 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 .system_generated/
+.framework/telemetry.jsonl
 
 # OS Metadata
 .DS_Store

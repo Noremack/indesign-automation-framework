@@ -119,6 +119,7 @@ npm run test:unit
 | `npm run link:host` | Discovers installed InDesign versions and creates zero-privilege NTFS junctions in Scripts Panel |
 | `npm run scaffold <Name>` | Scaffolds a new domain service and test suite (`--type=layout\|text\|hygiene`) |
 | `npm run prompt:pack` | Packs rules, types, and task into a token-capped prompt for LLMs |
+| `npm run roadblocks` | Analyzes local failure telemetry to identify recurring roadblocks and friction points |
 | `npm run context:extract` | Extracts concise AST signatures from a TypeScript file |
 
 ---
@@ -310,6 +311,24 @@ Silent clipboard modification creates severe friction and data loss for develope
 - **Never Silent**: Whenever an automated command writes to the clipboard, it logs a prominent terminal notice: `📋 [Notice] ...`.
 - **InDesign Host Notices**: Host error alerts clearly declare: `[Notice] A diagnostic report was copied to your clipboard.`
 - **Configurable Opt-Out**: Set `{ autoCopyDiagnostics: false }` in `BaseBatchOptions` to prevent automated clipboard writes entirely.
+
+---
+
+### AI Friction Telemetry & Roadblock Tracking (`npm run roadblocks`)
+
+To continuously learn from developer and AI execution roadblocks without telemetry bloat, this framework maintains a local append-only ledger (`.framework/telemetry.jsonl`):
+- **Zero Overhead**: Zero external network requests or heavy analytics dependencies.
+- **Automatic Logging**: Whenever `prompt:fix` or `test:fix` processes an execution error, the diagnostic metadata (error code, domain, service, and message) is appended locally.
+- **Empirical Analysis**: Run `npm run roadblocks` to inspect failure distribution, identify recurring patterns, and receive concrete invariant guidance.
+- **Closed-Loop AI Warning**: When generating prompts via `prompt:pack` or `prompt:new`, top historically recorded roadblocks are automatically appended under `[HISTORICAL_ROADBLOCKS_TO_AVOID]` to preemptively steer AI assistants away from known pitfalls.
+
+```bash
+# View aggregated failure report
+npm run roadblocks
+
+# Clear the local ledger
+npm run roadblocks -- --clear
+```
 
 ---
 

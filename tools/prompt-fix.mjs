@@ -74,15 +74,87 @@ export function findMatchingService(errorText, serviceDir = "src/services") {
   return null;
 }
 
+export function recordRoadblock({
+  code = "ERR_UNKNOWN",
+  domain = "GENERAL",
+  action = "UnknownAction",
+  message = "",
+  logPath = ".framework/telemetry.jsonl"
+} = {}) {
+  try {
+    const fullLogPath = path.resolve(logPath);
+    const dir = path.dirname(fullLogPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const entry = {
+      timestamp: new Date().toISOString(),
+      code,
+      domain,
+      action,
+      message: message.slice(0, 300).replace(/\r?\n/g, " ")
+    };
+
+    fs.appendFileSync(fullLogPath, JSON.stringify(entry) + "\n", "utf8");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+export function extractDiagnosticMeta(errorInput) {
+  let code = "ERR_UNKNOWN";
+  let domain = "GENERAL";
+  let action = "UnknownAction";
+  let message = "";
+
+  try {
+    const parsed = JSON.parse(errorInput);
+    if (parsed && typeof parsed === "object") {
+      code = parsed.errorCode || parsed.code || code;
+      domain = parsed.domain || domain;
+      action = parsed.action || action;
+      message = parsed.message || "";
+      return { code, domain, action, message };
+    }
+  } catch (_) {}
+
+  const codeMatch = errorInput.match(/\b(ERR_[A-Z0-9_]+)\b/);
+  if (codeMatch) code = codeMatch[1];
+
+  const domainMatch = errorInput.match(/\b(DOM_INTEGRITY|TRANSACTION|PREFLIGHT|VALIDATION|IO)\b/);
+  if (domainMatch) domain = domainMatch[1];
+
+  const actionMatch = errorInput.match(/action["\s:]+([A-Za-z0-9_\s-]+)/i) || errorInput.match(/at\s+([A-Za-z0-9]+Service)/);
+  if (actionMatch) action = actionMatch[1].trim();
+
+  const msgLine = errorInput.split("\n").find(l => l.includes("Error:") || l.includes("message"));
+  if (msgLine) message = msgLine.trim();
+
+  return { code, domain, action, message };
+}
+
 export function generateFixPrompt({
   errorInput,
   servicePath = null,
   rulesPath = "antigravity.rules.json",
-  typesPath = "src/core/types.ts"
+  typesPath = "src/core/types.ts",
+  logPath = ".framework/telemetry.jsonl"
 }) {
   if (!errorInput || typeof errorInput !== "string" || !errorInput.trim()) {
     throw new Error("No error diagnostic input provided.");
   }
+
+  // Record roadblock metadata to telemetry ledger
+  const meta = extractDiagnosticMeta(errorInput);
+  recordRoadblock({
+    code: meta.code,
+    domain: meta.domain,
+    action: meta.action,
+    message: meta.message || errorInput,
+    logPath
+  });
 
   const resolvedRulesPath = path.resolve(rulesPath);
   const resolvedTypesPath = path.resolve(typesPath);

@@ -61,6 +61,7 @@ If a user request lacks scope, override policy, geometry units, or failure polic
 | `npm run build` | Compiles `.idjs` script, UXP plugin, and library distributions |
 | `npm run validate` | Runs invariant lint, type-check, tests, and build in sequence (pre-commit gate) |
 | `npm run prompt:pack` | Packs rules, types, and task into a token-capped prompt for LLMs |
+| `npm run roadblocks` | Analyzes local failure telemetry to identify recurring roadblocks and friction points |
 | `npm run context:extract` | Extracts TypeScript AST interface signatures without token bloat |
 
 ---

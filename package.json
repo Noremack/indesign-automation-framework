@@ -56,6 +56,7 @@
     "prompt:new": "node tools/prompt-wizard.mjs",
     "prompt:pack": "node tools/pack-prompt.mjs",
     "prompt:fix": "node tools/prompt-fix.mjs",
+    "roadblocks": "node tools/roadblocks.mjs",
     "context:extract": "node tools/extract-context.mjs"
   },
   "devDependencies": {

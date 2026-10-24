@@ -152,5 +152,53 @@ describe("Support Tools & Adapters", () => {
       expect(result.intakeSummary).toContain("1C, 2A, 3D, 4B");
     });
   });
+
+  describe("roadblocks telemetry", () => {
+    it("records roadblock events and analyzes failure distributions", async () => {
+      const { recordRoadblock } = await import("../tools/prompt-fix.mjs");
+      const { analyzeRoadblocks } = await import("../tools/roadblocks.mjs");
+      const tempLog = ".framework/test-telemetry.jsonl";
+
+      // Ensure clean state
+      const fs = await import("fs");
+      if (fs.existsSync(tempLog)) fs.unlinkSync(tempLog);
+
+      recordRoadblock({
+        code: "ERR_ELEMENT_NOT_EDITABLE",
+        domain: "DOM_INTEGRITY",
+        action: "TestFrameAligner",
+        message: "Locked text frame id 12",
+        logPath: tempLog
+      });
+
+      recordRoadblock({
+        code: "ERR_ELEMENT_NOT_EDITABLE",
+        domain: "DOM_INTEGRITY",
+        action: "TestFrameAligner",
+        message: "Locked text frame id 15",
+        logPath: tempLog
+      });
+
+      recordRoadblock({
+        code: "ERR_TRANSACTION_FAILED",
+        domain: "TRANSACTION",
+        action: "TestFrameAligner",
+        message: "Unexpected geometry error",
+        logPath: tempLog
+      });
+
+      const report = analyzeRoadblocks(tempLog);
+
+      expect(report.total).toBe(3);
+      expect(report.byCode[0].code).toBe("ERR_ELEMENT_NOT_EDITABLE");
+      expect(report.byCode[0].count).toBe(2);
+      expect(report.byCode[0].percentage).toBe(67);
+      expect(report.byCode[0].suggestion).toContain("isElementEditable");
+      expect(report.byCode[1].code).toBe("ERR_TRANSACTION_FAILED");
+
+      // Cleanup
+      if (fs.existsSync(tempLog)) fs.unlinkSync(tempLog);
+    });
+  });
 });
 
