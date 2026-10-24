@@ -128,4 +128,42 @@ describe("BaseService Invariant Execution", () => {
 
     logSpy.mockRestore();
   });
+
+  it("supports dryRun mode and provides simulated notification", () => {
+    const service = new TestLayoutService();
+    const doc = new MockDocument();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = service.execute(doc, { dryRun: true, notifyOnCompletion: true });
+    expect(result.success).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[Notification] Test Layout Service (Dry Run): Simulation completed successfully (no changes applied).")
+    );
+
+    logSpy.mockRestore();
+  });
+
+  it("formats structured diagnostic payload and copies to clipboard on failure", () => {
+    const service = new FailingService();
+    const doc = new MockDocument();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = service.execute(doc, { notifyOnCompletion: true });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+
+    const diagnosticJson = service.copyDiagnosticToClipboard(result.error);
+    const parsed = JSON.parse(diagnosticJson);
+
+    expect(parsed.status).toBe("FAILED");
+    expect(parsed.action).toBe("Failing Service");
+    expect(parsed.errorCode).toBe("ERR_TRANSACTION_FAILED");
+    expect(parsed.message).toContain("Simulated failure in processing");
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Diagnostic report copied to clipboard. Paste into your AI assistant for instant debugging.")
+    );
+
+    logSpy.mockRestore();
+  });
 });

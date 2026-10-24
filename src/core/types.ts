@@ -42,5 +42,6 @@ export interface BaseBatchOptions {
   failurePolicy?: FailurePolicy;
   scope?: ExecutionScope;
   notifyOnCompletion?: boolean;
+  dryRun?: boolean;
 }
 

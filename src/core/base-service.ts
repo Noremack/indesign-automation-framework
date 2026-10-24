@@ -1,5 +1,5 @@
 import { app } from "indesign";
-import { ServiceResult, BaseBatchOptions } from "./types";
+import { ServiceResult, BaseBatchOptions, FrameworkError } from "./types";
 import { runInTransaction } from "./transaction";
 import { withNormalizedUnits } from "./app-state";
 
@@ -10,7 +10,7 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
   public execute(doc: any, options: TOptions): ServiceResult<TReport> {
     const currentVersion = parseFloat(app.version);
     if (currentVersion < this.minHostVersion) {
-      return {
+      const result: ServiceResult<TReport> = {
         success: false,
         error: {
           code: "ERR_UNSUPPORTED_HOST_VERSION",
@@ -19,10 +19,15 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
           recoverable: false
         }
       };
+      this.copyDiagnosticToClipboard(result.error);
+      if (options.notifyOnCompletion) {
+        this.displayNotification(result, options);
+      }
+      return result;
     }
 
     if (!doc || !doc.isValid) {
-      return {
+      const result: ServiceResult<TReport> = {
         success: false,
         error: {
           code: "ERR_INVALID_DOCUMENT",
@@ -31,26 +36,67 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
           recoverable: false
         }
       };
+      this.copyDiagnosticToClipboard(result.error);
+      if (options.notifyOnCompletion) {
+        this.displayNotification(result, options);
+      }
+      return result;
     }
 
-    const result = runInTransaction(this.actionName, () => {
+    const actionLabel = options.dryRun ? `${this.actionName} (Dry Run)` : this.actionName;
+    const result = runInTransaction(actionLabel, () => {
       return withNormalizedUnits(doc, () => {
         return this.process(doc, options);
       });
     });
 
+    if (!result.success) {
+      this.copyDiagnosticToClipboard(result.error);
+    }
+
     if (options.notifyOnCompletion) {
-      this.displayNotification(result);
+      this.displayNotification(result, options);
     }
 
     return result;
   }
 
-  protected displayNotification(result: ServiceResult<TReport>): void {
-    const title = this.actionName;
+  public copyDiagnosticToClipboard(error?: FrameworkError): string {
+    if (!error) return "";
+    const payload = {
+      status: "FAILED",
+      action: this.actionName,
+      errorCode: error.code,
+      domain: error.domain,
+      message: error.message,
+      targetElement: error.targetElement,
+      recoverable: error.recoverable,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    };
+    const formatted = JSON.stringify(payload, null, 2);
+
+    try {
+      const uxp = require("uxp");
+      if (uxp && uxp.clipboard && typeof uxp.clipboard.writeText === "function") {
+        const res = uxp.clipboard.writeText(formatted);
+        if (res && typeof res.then === "function") {
+          res.catch(() => {});
+        }
+      }
+    } catch (_) {}
+
+    return formatted;
+  }
+
+  protected displayNotification(
+    result: ServiceResult<TReport>,
+    options?: TOptions
+  ): void {
+    const title = options?.dryRun ? `${this.actionName} (Dry Run)` : this.actionName;
     const message = result.success
-      ? `Operation completed successfully.`
-      : `Operation failed: ${result.error?.message || "Unknown error"}`;
+      ? (options?.dryRun ? "Simulation completed successfully (no changes applied)." : "Operation completed successfully.")
+      : `Operation failed: ${result.error?.message || "Unknown error"}\n\nDiagnostic report copied to clipboard. Paste into your AI assistant for instant debugging.`;
 
     try {
       const uxp = require("uxp");

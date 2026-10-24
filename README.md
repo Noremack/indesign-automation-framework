@@ -17,11 +17,18 @@ This toolkit provides the core architectural foundation, invariants, offline tes
 - **Pure Zero-Dependency PathUtils**: Safe path utilities designed specifically for UXP where Node's native `path` module is absent.
 - **DOM & Selection Resolvers**: Robust resolvers handling text ranges, text frames, table cells, graphic items, and recursive style groups.
 - **Find/Change Scoping**: Safe scoped GREP and Text searches with guaranteed preference cleanup in `finally`.
+- **Live InDesign Host Linking (`npm run link:host`)**: Auto-discovers installed InDesign versions (2023–2026+) and creates zero-privilege NTFS directory junctions directly into your InDesign Scripts Panel.
+- **Service Archetypes (`npm run scaffold`)**: Scaffold specialized domain templates for Layout transformations, Text/GREP replacements, or Document Hygiene.
+- **Non-Destructive Simulation (`dryRun`)**: First-class `dryRun` mode in `BaseBatchOptions` to preview mutations and report affected items without modifying documents.
+- **Interactive Error Diagnostics & Auto-Copy**: Automatically serializes failure diagnostics to the system clipboard and displays an actionable alert inside InDesign.
+- **Self-Healing AI Repair Prompts (`npm run prompt:fix`)**: Generates targeted AI prompts from clipboard error diagnostics, logs, or stack traces to enable one-click automated debugging.
 - **AI-Assisted Development Tools**:
-  - `tools/scaffold.mjs`: Instantly generate new domain services and unit tests.
+  - `tools/scaffold.mjs`: Instantly generate new domain services and unit tests with archetype support.
+  - `tools/prompt-fix.mjs`: Turn clipboard error diagnostics into immediate self-healing AI repair prompts.
+  - `tools/link-host.mjs`: Link built scripts directly to InDesign without elevated permissions.
   - `tools/pack-prompt.mjs`: Pack token-budgeted prompts containing rules, contracts, and task specifications.
   - `tools/extract-context.mjs`: Extract minimal TypeScript AST signatures to feed AI models without token bloat.
-  - `tools/dom-inspect.idjs`: Crash-proof DOM selection property dumper to run inside InDesign.
+  - `tools/dom-inspect.idjs`: Crash-proof DOM selection property dumper to run inside InDesign with automatic clipboard copy.
 - **Packagable**: Can be used as a standalone project template or installed as an npm package dependency (`npm pack`).
 
 ---
@@ -44,19 +51,32 @@ Run the full pre-commit validation suite (type checking, offline unit tests, and
 npm run validate
 ```
 
-### 3. Scaffold a New Service
+### 3. Connect to InDesign Scripts Panel
 
-Generate a new domain service with its companion unit test:
+Auto-link the build directory to all installed InDesign versions with a single command (requires zero administrator privileges):
 
 ```bash
-npm run scaffold MarginAdjuster
+npm run link:host
 ```
 
-This creates:
-- `src/services/margin-adjuster.ts` (Extends `BaseService`, implements `process()`)
-- `tests/margin-adjuster.test.ts` (Vitest unit test with `MockDocument`)
+Any build generated via `npm run build` will now instantly appear in InDesign's **Scripts Panel** under the `InDesignAutomation` folder.
 
-Verify your new service:
+### 4. Scaffold a New Service
+
+Scaffold a domain service and its companion unit test using one of three archetypes:
+
+```bash
+# Layout archetype (default): geometric bounds, margin snapping, page items
+npm run scaffold MarginAdjuster -- --type=layout
+
+# Text archetype: story scanning, reverse GREP replacement, style override isolation
+npm run scaffold ClearOverrides -- --type=text
+
+# Document hygiene archetype: swatch cleanup, layer purging, system reserve protection
+npm run scaffold SwatchPurger -- --type=hygiene
+```
+
+Verify your new service offline:
 
 ```bash
 npm run test:unit
@@ -68,16 +88,18 @@ npm run test:unit
 
 | Command | Purpose |
 |---|---|
-| `npm run validate` | Runs `type-check`, `test:unit`, and `build` (pre-flight gate) |
+| `npm run validate` | Runs `type-check`, `test:unit`, and `build` in sequence (pre-flight gate) |
 | `npm run type-check` | Runs `tsc --noEmit` across source and test files |
-| `npm run test:unit` | Executes all Vitest unit tests |
+| `npm run test:unit` | Executes all Vitest unit tests offline |
 | `npm run test:watch` | Runs unit tests in watch mode |
 | `npm run build` | Compiles script (`.idjs`), plugin, and library distributions |
 | `npm run build:script` | Builds `dist/scripts/InDesignAutomation.idjs` |
 | `npm run build:plugin` | Builds `dist/plugins/InDesignAutomation/index.js` |
 | `npm run build:lib` | Builds `dist/index.js` and `dist/index.cjs` |
-| `npm run scaffold <Name>` | Scaffolds a new domain service and test suite |
-| `npm run prompt:pack` | Packs rules and contracts into a token-capped prompt for LLMs |
+| `npm run link:host` | Discovers installed InDesign versions and creates zero-privilege NTFS junctions in Scripts Panel |
+| `npm run scaffold <Name>` | Scaffolds a new domain service and test suite (`--type=layout\|text\|hygiene`) |
+| `npm run prompt:pack` | Packs rules, types, and task into a token-capped prompt for LLMs |
+| `npm run prompt:fix` | Converts clipboard error diagnostics or logs into self-healing AI repair prompts |
 | `npm run context:extract` | Extracts concise AST signatures from a TypeScript file |
 
 ---
@@ -193,6 +215,51 @@ npm run prompt:pack -- --snapshot selection.json "Format selected callout boxes"
 npm run prompt:pack -- --out prompt.txt "Clean up unused swatches and empty layers"
 ```
 
+---
+
+### Automated Self-Healing AI Prompts (`npm run prompt:fix`)
+
+When an execution error occurs in InDesign or a test fails, `BaseService` automatically serializes the full error diagnostic (code, domain, message, target element, and stack trace) to the system clipboard and alerts the user.
+
+To immediately repair the service without manual prompt crafting:
+
+```bash
+# 1. Simply run prompt:fix — it auto-detects clipboard diagnostics!
+npm run prompt:fix
+
+# 2. Or pass an error string or log file directly:
+npm run prompt:fix -- --error="ERR_ELEMENT_NOT_EDITABLE: Item 42 is locked"
+npm run prompt:fix -- --file=test-failure.log
+
+# 3. Or pipe from standard input:
+cat test-failure.log | npm run prompt:fix
+```
+
+The tool:
+1. Extracts the exact error payload.
+2. Identifies the failing service in `src/services/` and extracts its TypeScript AST signatures.
+3. Bundles framework rules and contracts.
+4. Auto-copies the packed repair prompt back to your clipboard ready to paste (`Ctrl+V` / `Cmd+V`) into your AI assistant.
+
+---
+
+### Non-Destructive Dry-Run Simulation
+
+All services extending `BaseService` support `dryRun?: boolean` in `BaseBatchOptions`. When `dryRun: true`:
+- The service executes inside `runInTransaction` labeled with `(Dry Run)`.
+- DOM mutations are bypassed (`if (!options.dryRun)`).
+- Complete element counts, inspections, and report metrics are generated without altering the active document.
+- InDesign displays a non-destructive confirmation: `Simulation completed successfully (no changes applied).`
+
+Example:
+```typescript
+const result = service.execute(doc, {
+  dryRun: true,
+  notifyOnCompletion: true
+});
+```
+
+---
 
 ## Packaging as a Base Toolkit
 

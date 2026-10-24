@@ -74,4 +74,37 @@ describe("Support Tools & Adapters", () => {
       expect(signatures).toContain("process");
     });
   });
+
+  describe("generateFixPrompt", () => {
+    it("generates an AI repair prompt including rules, contracts, and error report", async () => {
+      const { generateFixPrompt } = await import("../tools/prompt-fix.mjs");
+      const errorJson = JSON.stringify({
+        status: "FAILED",
+        action: "AlignToSpread",
+        errorCode: "ERR_ELEMENT_NOT_EDITABLE",
+        message: "Item 42 is locked or hidden"
+      });
+
+      const prompt = generateFixPrompt({
+        errorInput: errorJson,
+        rulesPath: "antigravity.rules.json",
+        typesPath: "src/core/types.ts"
+      });
+
+      expect(prompt).toContain("[ROLE]");
+      expect(prompt).toContain("[FRAMEWORK RULES]");
+      expect(prompt).toContain("[CONTRACTS & TYPES]");
+      expect(prompt).toContain("[DIAGNOSTIC ERROR REPORT]");
+      expect(prompt).toContain("ERR_ELEMENT_NOT_EDITABLE");
+      expect(prompt).toContain("[REPAIR INSTRUCTIONS]");
+    });
+
+    it("throws an error when empty error input is provided", async () => {
+      const { generateFixPrompt } = await import("../tools/prompt-fix.mjs");
+      expect(() => {
+        generateFixPrompt({ errorInput: "" });
+      }).toThrow(/No error diagnostic input provided/);
+    });
+  });
 });
+

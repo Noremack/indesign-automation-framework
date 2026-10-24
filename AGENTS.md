@@ -21,6 +21,8 @@ This repository is a production-grade, packagable automation framework and AI-as
 - **Search**: Wrap GREP and Text queries inside `withFindChangeScope()`.
 - **Paths**: Use `PathUtils` for all path manipulations (zero-dependency, safe in InDesign UXP).
 - **Memory**: Never call unscoped `doc.allPageItems`. Iterate hierarchically by `Spread` or `Page`.
+- **Dry-Run Simulation**: Support `dryRun?: boolean` in `BaseBatchOptions`. Check `if (!options.dryRun)` before applying DOM mutations so services can perform non-destructive layout simulations and dry runs.
+- **Error Diagnostics & Self-Healing**: On execution failure, `BaseService` automatically serializes a structured diagnostic payload to the system clipboard. Run `npm run prompt:fix` to generate an instant self-healing AI prompt.
 
 ---
 
@@ -45,7 +47,9 @@ If a user request lacks scope, override policy, geometry units, or failure polic
 
 | Command | Description |
 |---|---|
-| `npm run scaffold <Name>` | Generates a new service extending `BaseService` and its companion unit test |
+| `npm run scaffold <Name> [-- --type=layout\|text\|hygiene]` | Generates a new service extending `BaseService` and its companion unit test |
+| `npm run link:host` | Discovers installed InDesign versions and creates zero-privilege NTFS directory junctions in the Scripts Panel |
+| `npm run prompt:fix` | Assembles a self-healing AI prompt from clipboard error diagnostics, logs, or stack traces |
 | `npm run type-check` | Runs `tsc --noEmit` across all source and test files |
 | `npm run test:unit` | Runs the full Vitest suite with offline InDesign mock DOM |
 | `npm run build` | Compiles `.idjs` script, UXP plugin, and library distributions |

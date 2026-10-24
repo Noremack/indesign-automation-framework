@@ -2,11 +2,24 @@
 import fs from "fs";
 import path from "path";
 
-const nameArg = process.argv[2];
+const args = process.argv.slice(2);
+let nameArg = "";
+let typeArg = "layout"; // default: layout
+
+for (const arg of args) {
+  if (arg.startsWith("--type=")) {
+    typeArg = arg.replace("--type=", "").toLowerCase();
+  } else if (!arg.startsWith("--")) {
+    nameArg = arg;
+  }
+}
 
 if (!nameArg) {
-  console.log("Usage: npm run scaffold <ServiceName>");
-  console.log("Example: npm run scaffold TextFrameCleaner");
+  console.log("Usage: npm run scaffold <ServiceName> [-- --type=layout|text|hygiene]");
+  console.log("Examples:");
+  console.log("  npm run scaffold FrameAligner -- --type=layout");
+  console.log("  npm run scaffold ClearOverrides -- --type=text");
+  console.log("  npm run scaffold SwatchPurger -- --type=hygiene");
   process.exit(1);
 }
 
@@ -30,12 +43,185 @@ if (!fs.existsSync(testDir)) {
 const serviceFile = path.join(serviceDir, `${kebabName}.ts`);
 const testFile = path.join(testDir, `${kebabName}.test.ts`);
 
-const serviceTemplate = `import { BaseService } from "../core/base-service";
+let serviceTemplate = "";
+let testTemplate = "";
+
+if (typeArg === "text") {
+  serviceTemplate = `import { BaseService } from "../core/base-service";
+import { BaseBatchOptions } from "../core/types";
+import { withFindChangeScope } from "../core/find-change-scope";
+import { isElementEditable } from "../core/app-state";
+
+export interface ${pascalName}Options extends BaseBatchOptions {
+  searchPattern?: string;
+  replacePattern?: string;
+}
+
+export interface ${pascalName}Report {
+  storiesScanned: number;
+  replacementsMade: number;
+  skippedCount: number;
+  details: string[];
+}
+
+export class ${pascalName}Service extends BaseService<${pascalName}Options, ${pascalName}Report> {
+  protected readonly actionName = "${pascalName} Text Automation";
+
+  protected process(doc: any, options: ${pascalName}Options): ${pascalName}Report {
+    const report: ${pascalName}Report = {
+      storiesScanned: 0,
+      replacementsMade: 0,
+      skippedCount: 0,
+      details: []
+    };
+
+    doc.recompose();
+
+    const stories = doc.stories ? doc.stories.everyItem().getElements() : [];
+    const totalStories = stories.length;
+
+    // Wrap in withFindChangeScope to ensure preferences are cleanly restored
+    withFindChangeScope("GREP", () => {
+      for (let s = 0; s < totalStories; s++) {
+        const story = stories[s];
+        this.reportProgress(options, "Scanning stories", s + 1, totalStories);
+
+        try {
+          if (!isElementEditable(story)) {
+            report.skippedCount++;
+            continue;
+          }
+
+          report.storiesScanned++;
+
+          // Invariant: Always loop backwards over text matches to prevent offset drift
+          const paragraphs = story.paragraphs ? story.paragraphs.everyItem().getElements() : [];
+          for (let p = paragraphs.length - 1; p >= 0; p--) {
+            const para = paragraphs[p];
+            if (!isElementEditable(para)) continue;
+
+            // Example text mutation (respecting dryRun)
+            if (!options.dryRun) {
+              // Apply domain text mutation here
+            }
+            report.replacementsMade++;
+          }
+        } catch (storyErr: any) {
+          if (options.failurePolicy === "strict") {
+            throw storyErr;
+          }
+          report.skippedCount++;
+          report.details.push(\`Story \${story?.id || s} skipped: \${storyErr.message}\`);
+        }
+      }
+    });
+
+    doc.recompose();
+    return report;
+  }
+}
+`;
+
+  testTemplate = `import { describe, it, expect } from "vitest";
+import { MockDocument, MockTextFrame } from "./mocks/indesign-mock";
+import { ${pascalName}Service } from "../src/services/${kebabName}";
+
+describe("${pascalName}Service (Text Archetype)", () => {
+  it("processes document stories and respects dryRun", () => {
+    const service = new ${pascalName}Service();
+    const doc = new MockDocument();
+
+    const frame = new MockTextFrame();
+    const story = frame.parentStory;
+    doc.stories = {
+      everyItem: () => ({ getElements: () => [story] })
+    } as any;
+
+    const result = service.execute(doc, { dryRun: true });
+    expect(result.success).toBe(true);
+    expect(result.data?.storiesScanned).toBe(1);
+  });
+});
+`;
+} else if (typeArg === "hygiene") {
+  serviceTemplate = `import { BaseService } from "../core/base-service";
+import { BaseBatchOptions } from "../core/types";
+
+export interface ${pascalName}Options extends BaseBatchOptions {
+  purgeUnused?: boolean;
+}
+
+export interface ${pascalName}Report {
+  colorsInspected: number;
+  layersInspected: number;
+  purgedCount: number;
+  skippedCount: number;
+  details: string[];
+}
+
+export class ${pascalName}Service extends BaseService<${pascalName}Options, ${pascalName}Report> {
+  protected readonly actionName = "${pascalName} Document Hygiene";
+
+  protected process(doc: any, options: ${pascalName}Options): ${pascalName}Report {
+    const report: ${pascalName}Report = {
+      colorsInspected: 0,
+      layersInspected: 0,
+      purgedCount: 0,
+      skippedCount: 0,
+      details: []
+    };
+
+    // 1. Inspect colors/swatches backwards
+    const colors = doc.colors ? doc.colors.everyItem().getElements() : [];
+    for (let c = colors.length - 1; c >= 0; c--) {
+      const color = colors[c];
+      report.colorsInspected++;
+
+      try {
+        // Protect system swatches ('None', 'Black', 'Registration', 'Paper')
+        const reservedNames = new Set(["None", "Black", "Registration", "Paper"]);
+        if (reservedNames.has(color.name)) continue;
+
+        if (options.purgeUnused && !options.dryRun) {
+          // Perform purge action
+          report.purgedCount++;
+        }
+      } catch (err: any) {
+        if (options.failurePolicy === "strict") throw err;
+        report.skippedCount++;
+        report.details.push(\`Color \${color?.name} skipped: \${err.message}\`);
+      }
+    }
+
+    return report;
+  }
+}
+`;
+
+  testTemplate = `import { describe, it, expect } from "vitest";
+import { MockDocument, MockColor } from "./mocks/indesign-mock";
+import { ${pascalName}Service } from "../src/services/${kebabName}";
+
+describe("${pascalName}Service (Hygiene Archetype)", () => {
+  it("scans and purges document assets respecting system reserves", () => {
+    const service = new ${pascalName}Service();
+    const doc = new MockDocument();
+    doc.colors.add(new MockColor({ name: "UnusedSwatch" }));
+
+    const result = service.execute(doc, { purgeUnused: true, dryRun: false });
+    expect(result.success).toBe(true);
+    expect(result.data?.colorsInspected).toBeGreaterThan(0);
+  });
+});
+`;
+} else {
+  // Default: layout archetype
+  serviceTemplate = `import { BaseService } from "../core/base-service";
 import { BaseBatchOptions } from "../core/types";
 import { isElementEditable } from "../core/app-state";
 
 export interface ${pascalName}Options extends BaseBatchOptions {
-  dryRun?: boolean;
+  snapToMargins?: boolean;
 }
 
 export interface ${pascalName}Report {
@@ -45,7 +231,7 @@ export interface ${pascalName}Report {
 }
 
 export class ${pascalName}Service extends BaseService<${pascalName}Options, ${pascalName}Report> {
-  protected readonly actionName = "${pascalName} Automation";
+  protected readonly actionName = "${pascalName} Layout Automation";
 
   protected process(doc: any, options: ${pascalName}Options): ${pascalName}Report {
     const report: ${pascalName}Report = {
@@ -54,10 +240,10 @@ export class ${pascalName}Service extends BaseService<${pascalName}Options, ${pa
       details: []
     };
 
-    // Always recompose prior to layout or text inspections
+    // Always recompose prior to layout inspections
     doc.recompose();
 
-    // Iterate pages or spreads (avoid doc.allPageItems)
+    // Iterate pages or spreads hierarchically (avoid doc.allPageItems)
     const pages = doc.pages ? doc.pages.everyItem().getElements() : [];
     const total = pages.length;
 
@@ -76,44 +262,49 @@ export class ${pascalName}Service extends BaseService<${pascalName}Options, ${pa
             continue;
           }
 
-          // Domain mutation logic goes here
+          // Domain layout transformation (respecting dryRun)
+          if (!options.dryRun) {
+            // Apply bounds/geometry adjustment
+          }
+
           report.processedCount++;
         } catch (itemErr: any) {
           if (options.failurePolicy === "strict") {
-            // Strict policy: Re-throw to trigger atomic UndoModes.ENTIRE_SCRIPT transaction rollback
+            // Strict policy: Re-throw to trigger atomic UndoModes.ENTIRE_SCRIPT rollback
             throw itemErr;
           }
           // Permissive policy: Report item failure and continue batch
           report.skippedCount++;
-          report.details.push(`Item ${item?.id || i} skipped: ${itemErr.message}`);
+          report.details.push(\`Item \${item?.id || i} skipped: \${itemErr.message}\`);
         }
       }
     }
 
+    doc.recompose();
     return report;
   }
 }
 `;
 
-const testTemplate = `import { describe, it, expect } from "vitest";
+  testTemplate = `import { describe, it, expect } from "vitest";
 import { MockDocument, MockTextFrame } from "./mocks/indesign-mock";
 import { ${pascalName}Service } from "../src/services/${kebabName}";
 
-describe("${pascalName}Service", () => {
-  it("executes successfully against a mock document", () => {
+describe("${pascalName}Service (Layout Archetype)", () => {
+  it("executes successfully against a mock document and respects dryRun", () => {
     const service = new ${pascalName}Service();
     const doc = new MockDocument();
     
-    // Add a mock text frame to the page
     const page = doc.pages[0];
     page.pageItems = {
       everyItem: () => ({
-        getElements: () => [new MockTextFrame({ name: "Header" })]
+        getElements: () => [new MockTextFrame({ name: "HeaderFrame" })]
       })
     };
 
     const progressReports: any[] = [];
     const result = service.execute(doc, {
+      dryRun: true,
       onProgress: (p) => progressReports.push(p)
     });
 
@@ -124,6 +315,7 @@ describe("${pascalName}Service", () => {
   });
 });
 `;
+}
 
 if (fs.existsSync(serviceFile)) {
   console.error(`Error: Service file already exists at ${serviceFile}`);
@@ -131,13 +323,13 @@ if (fs.existsSync(serviceFile)) {
 }
 
 fs.writeFileSync(serviceFile, serviceTemplate, "utf8");
-console.log(`+ Created service: ${path.relative(process.cwd(), serviceFile)}`);
+console.log(`+ Created service (${typeArg}): ${path.relative(process.cwd(), serviceFile)}`);
 
 if (!fs.existsSync(testFile)) {
   fs.writeFileSync(testFile, testTemplate, "utf8");
-  console.log(`+ Created test:    ${path.relative(process.cwd(), testFile)}`);
+  console.log(`+ Created test:              ${path.relative(process.cwd(), testFile)}`);
 }
 
-console.log(`\nService scaffolded successfully!`);
+console.log(`\nService scaffolded successfully [archetype: ${typeArg}]!`);
 console.log(`To verify:`);
 console.log(`  npm run test:unit`);
