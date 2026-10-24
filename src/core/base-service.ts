@@ -33,11 +33,35 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
       };
     }
 
-    return runInTransaction(this.actionName, () => {
+    const result = runInTransaction(this.actionName, () => {
       return withNormalizedUnits(doc, () => {
         return this.process(doc, options);
       });
     });
+
+    if (options.notifyOnCompletion) {
+      this.displayNotification(result);
+    }
+
+    return result;
+  }
+
+  protected displayNotification(result: ServiceResult<TReport>): void {
+    const title = this.actionName;
+    const message = result.success
+      ? `Operation completed successfully.`
+      : `Operation failed: ${result.error?.message || "Unknown error"}`;
+
+    try {
+      const uxp = require("uxp");
+      if (uxp && uxp.dialogs && typeof uxp.dialogs.showAlert === "function") {
+        uxp.dialogs.showAlert({ title, message });
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback for CLI or non-dialog test environments
+    console.log(`[Notification] ${title}: ${message}`);
   }
 
   protected abstract process(doc: any, options: TOptions): TReport;

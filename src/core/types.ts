@@ -41,5 +41,6 @@ export interface BaseBatchOptions {
   onProgress?: ProgressCallback;
   failurePolicy?: FailurePolicy;
   scope?: ExecutionScope;
+  notifyOnCompletion?: boolean;
 }
 

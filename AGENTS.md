@@ -24,9 +24,16 @@ This repository is a production-grade, packagable automation framework and AI-as
 
 ---
 
-## 2. Mandatory Intake Questionnaire (Rule Zero)
+## 2. Mandatory Intake Questionnaire & Presets (Rule Zero)
 
-If a user request lacks scope, override policy, geometry units, or failure policy, clarify the 4 points before generating code:
+If a user request lacks scope, override policy, geometry units, or failure policy, clarify the 4 points before generating code, or allow invocation via standard presets:
+
+### Standard Presets (Quick Prompting)
+- **Default Safe Preset** (`default preset`): `1C, 2A, 3D, 4B` (Active Spread, Preserve Overrides, No Geometry, Permissive)
+- **Page Strict Preset** (`page strict`): `1B, 2A, 3D, 4A` (Active Page, Preserve Overrides, No Geometry, Strict Abort)
+- **Doc Hygiene Preset** (`doc hygiene`): `1D, 2B, 3D, 4B` (Entire Document, Clear Overrides, No Geometry, Permissive)
+
+### 4-Point Intake Questionnaire
 1. **Scope**: [A] Selection [B] Active Page [C] Active Spread [D] Entire Document
 2. **Overrides**: [A] Preserve all [B] Clear all [C] Isolate character styles, clear para [D] N/A
 3. **Geometry**: [A] Relative delta in Points [B] Absolute Points [y1,x1,y2,x2] [C] Snap to margins [D] N/A

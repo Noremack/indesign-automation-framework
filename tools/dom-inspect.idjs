@@ -79,7 +79,25 @@ const { app } = require("indesign");
     snapshots.push(dump);
   }
 
+  const output = snapshots.length === 1 ? snapshots[0] : snapshots;
+  const jsonPayload = JSON.stringify(output, null, 2);
+
   console.log("--- SELECTION SNAPSHOT ---");
-  console.log(JSON.stringify(snapshots.length === 1 ? snapshots[0] : snapshots, null, 2));
+  console.log(jsonPayload);
+
+  // Auto-copy to system clipboard in InDesign UXP
+  try {
+    const uxp = require("uxp");
+    if (uxp && uxp.clipboard && typeof uxp.clipboard.writeText === "function") {
+      const res = uxp.clipboard.writeText(jsonPayload);
+      if (res && typeof res.then === "function") {
+        res.catch(() => {});
+      }
+      console.log("\n[SUCCESS] Snapshot automatically copied to system clipboard!");
+      console.log("Ready to paste directly into your AI prompt with Ctrl+V / Cmd+V.");
+    }
+  } catch (_) {
+    // Graceful fallback for non-UXP test runners or CLI
+  }
 })();
 

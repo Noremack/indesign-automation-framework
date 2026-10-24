@@ -116,4 +116,16 @@ describe("BaseService Invariant Execution", () => {
     expect(strictResult.error?.code).toBe("ERR_TRANSACTION_FAILED");
     expect(strictResult.error?.message).toContain("Element 2 processing error");
   });
+
+  it("handles notifyOnCompletion gracefully without throwing", () => {
+    const service = new TestLayoutService();
+    const doc = new MockDocument();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = service.execute(doc, { notifyOnCompletion: true });
+    expect(result.success).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("[Notification] Test Layout Service"));
+
+    logSpy.mockRestore();
+  });
 });

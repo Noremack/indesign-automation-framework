@@ -147,10 +147,16 @@ Task: Implement a service that identifies all single-line headline text frames, 
 
 ---
 
-### The Mandatory 4-Point Intake Questionnaire (Rule Zero)
+### The Mandatory 4-Point Intake Questionnaire & Presets (Rule Zero)
 
-Whenever prompting an AI model for new services or modifying existing logic, always provide the 4 operational axes to prevent hallucination:
+Whenever prompting an AI model for new services or modifying existing logic, you can specify individual parameters or simply invoke a **Standard Preset** to eliminate prompt friction:
 
+#### Standard Presets (Fast Prompting)
+* **Default Safe Preset** (`default preset`): `1C, 2A, 3D, 4B` — Active Spread, Preserve Overrides, No Geometry, Permissive Failure.
+* **Page Strict Preset** (`page strict`): `1B, 2A, 3D, 4A` — Active Page, Preserve Overrides, No Geometry, Strict Abort.
+* **Doc Hygiene Preset** (`doc hygiene`): `1D, 2B, 3D, 4B` — Entire Document, Clear Overrides, No Geometry, Permissive Failure.
+
+#### 4-Point Questionnaire Breakdown
 1. **Target Scope**:
    * `[A]` Active Selection *(Attach `dom-inspect.idjs` JSON snapshot)*
    * `[B]` Current Active Page
