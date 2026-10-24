@@ -7,3 +7,4 @@ export * from "./core/selection-resolver";
 export * from "./core/find-change-scope";
 export * from "./adapters/logger";
 export * from "./adapters/path-utils";
+export * from "./core/pipeline-service";

@@ -17,18 +17,25 @@ This toolkit provides the core architectural foundation, invariants, offline tes
 - **Pure Zero-Dependency PathUtils**: Safe path utilities designed specifically for UXP where Node's native `path` module is absent.
 - **DOM & Selection Resolvers**: Robust resolvers handling text ranges, text frames, table cells, graphic items, and recursive style groups.
 - **Find/Change Scoping**: Safe scoped GREP and Text searches with guaranteed preference cleanup in `finally`.
+- **Pipeline Composability (`PipelineService`)**: Execute sequential multi-service operations in a single atomic transaction with aggregated progress and error reporting.
+- **Anti-Drift Invariant Linter (`npm run lint:invariants`)**: Static AST rule checker preventing legacy ExtendScript (`Folder`, `File`, `$.writeln`) and forbidden APIs (`doc.allPageItems`) from reaching production.
 - **Live InDesign Host Linking (`npm run link:host`)**: Auto-discovers installed InDesign versions (2023–2026+) and creates zero-privilege NTFS directory junctions directly into your InDesign Scripts Panel.
+- **Continuous Watch Mode (`npm run dev`)**: Sub-second Rollup watch compilation directly into the linked InDesign Scripts Panel folder.
 - **Service Archetypes (`npm run scaffold`)**: Scaffold specialized domain templates for Layout transformations, Text/GREP replacements, or Document Hygiene.
 - **Non-Destructive Simulation (`dryRun`)**: First-class `dryRun` mode in `BaseBatchOptions` to preview mutations and report affected items without modifying documents.
-- **Interactive Error Diagnostics & Auto-Copy**: Automatically serializes failure diagnostics to the system clipboard and displays an actionable alert inside InDesign.
-- **Self-Healing AI Repair Prompts (`npm run prompt:fix`)**: Generates targeted AI prompts from clipboard error diagnostics, logs, or stack traces to enable one-click automated debugging.
+- **Clipboard Notice & Usability**: Full transparency policy—never writes to system clipboard silently. All operations provide prominent notices (`[Notice] ...`) and respect `autoCopyDiagnostics: false`.
+- **Interactive Intake Wizard (`npm run prompt:new`)**: Interactive CLI wizard for 4-point questionnaire intake, standard presets, and token-budgeted prompt assembly.
+- **One-Command Test Failure Healing (`npm run test:fix`)**: Automatically runs tests, catches failures, extracts failing service AST context, and packs an AI repair prompt with notice.
 - **AI-Assisted Development Tools**:
-  - `tools/scaffold.mjs`: Instantly generate new domain services and unit tests with archetype support.
+  - `tools/prompt-wizard.mjs`: Interactive prompt intake wizard with clipboard snapshot detection.
   - `tools/prompt-fix.mjs`: Turn clipboard error diagnostics into immediate self-healing AI repair prompts.
+  - `tools/test-fix.mjs`: One-command test failure repair prompt generator.
+  - `tools/lint-invariants.mjs`: Fast AST invariant and banned API static linter.
+  - `tools/scaffold.mjs`: Instantly generate new domain services and unit tests with archetype support.
   - `tools/link-host.mjs`: Link built scripts directly to InDesign without elevated permissions.
   - `tools/pack-prompt.mjs`: Pack token-budgeted prompts containing rules, contracts, and task specifications.
   - `tools/extract-context.mjs`: Extract minimal TypeScript AST signatures to feed AI models without token bloat.
-  - `tools/dom-inspect.idjs`: Crash-proof DOM selection property dumper to run inside InDesign with automatic clipboard copy.
+  - `tools/dom-inspect.idjs`: Crash-proof DOM selection property dumper to run inside InDesign with clipboard copy notice.
 - **Packagable**: Can be used as a standalone project template or installed as an npm package dependency (`npm pack`).
 
 ---
@@ -45,7 +52,7 @@ npm install
 
 ### 2. Validate Setup
 
-Run the full pre-commit validation suite (type checking, offline unit tests, and Rollup builds):
+Run the full pre-commit validation suite (invariant linter, type checking, offline unit tests, and Rollup builds):
 
 ```bash
 npm run validate
@@ -59,9 +66,17 @@ Auto-link the build directory to all installed InDesign versions with a single c
 npm run link:host
 ```
 
-Any build generated via `npm run build` will now instantly appear in InDesign's **Scripts Panel** under the `InDesignAutomation` folder.
+Any build generated via `npm run build` or `npm run dev` will now instantly appear in InDesign's **Scripts Panel** under the `InDesignAutomation` folder.
 
-### 4. Scaffold a New Service
+### 4. Continuous Live Watch Mode
+
+Start the live watcher to automatically recompile `.idjs` scripts upon code save:
+
+```bash
+npm run dev
+```
+
+### 5. Scaffold a New Service
 
 Scaffold a domain service and its companion unit test using one of three archetypes:
 
@@ -88,7 +103,12 @@ npm run test:unit
 
 | Command | Purpose |
 |---|---|
-| `npm run validate` | Runs `type-check`, `test:unit`, and `build` in sequence (pre-flight gate) |
+| `npm run prompt:new` | Interactive CLI wizard for 4-point intake, presets, and token-capped prompt assembly |
+| `npm run prompt:fix` | Converts clipboard error diagnostics or logs into self-healing AI repair prompts |
+| `npm run test:fix` | Runs test suite and automatically generates an AI repair prompt on any failure with notice |
+| `npm run lint:invariants` | Static AST scanner that validates code against InDesign UXP invariants and banned APIs |
+| `npm run dev` | Continuous Rollup watch mode that auto-rebuilds scripts to the linked Scripts Panel |
+| `npm run validate` | Runs invariant lint, type-check, tests, and build in sequence (pre-flight gate) |
 | `npm run type-check` | Runs `tsc --noEmit` across source and test files |
 | `npm run test:unit` | Executes all Vitest unit tests offline |
 | `npm run test:watch` | Runs unit tests in watch mode |
@@ -99,7 +119,6 @@ npm run test:unit
 | `npm run link:host` | Discovers installed InDesign versions and creates zero-privilege NTFS junctions in Scripts Panel |
 | `npm run scaffold <Name>` | Scaffolds a new domain service and test suite (`--type=layout\|text\|hygiene`) |
 | `npm run prompt:pack` | Packs rules, types, and task into a token-capped prompt for LLMs |
-| `npm run prompt:fix` | Converts clipboard error diagnostics or logs into self-healing AI repair prompts |
 | `npm run context:extract` | Extracts concise AST signatures from a TypeScript file |
 
 ---
@@ -258,6 +277,39 @@ const result = service.execute(doc, {
   notifyOnCompletion: true
 });
 ```
+
+### Pipeline Composability (`PipelineService`)
+
+Chain sequential multi-service operations in an atomic transaction:
+
+```typescript
+import { PipelineService } from "indesign-automation-framework";
+import { SwatchPurgerService } from "./services/swatch-purger";
+import { ClearOverridesService } from "./services/clear-overrides";
+import { MarginAdjusterService } from "./services/margin-adjuster";
+
+const pipeline = new PipelineService([
+  new SwatchPurgerService(),
+  new ClearOverridesService(),
+  new MarginAdjusterService()
+], "Catalog Production Pipeline");
+
+const result = pipeline.execute(doc, {
+  failurePolicy: "strict",
+  notifyOnCompletion: true
+});
+
+console.log(`Executed ${result.data?.stepsSucceeded} of ${result.data?.totalSteps} steps.`);
+```
+
+---
+
+### Clipboard Usability & Transparency Policy
+
+Silent clipboard modification creates severe friction and data loss for developers. This framework enforces strict clipboard visibility:
+- **Never Silent**: Whenever an automated command writes to the clipboard, it logs a prominent terminal notice: `📋 [Notice] ...`.
+- **InDesign Host Notices**: Host error alerts clearly declare: `[Notice] A diagnostic report was copied to your clipboard.`
+- **Configurable Opt-Out**: Set `{ autoCopyDiagnostics: false }` in `BaseBatchOptions` to prevent automated clipboard writes entirely.
 
 ---
 

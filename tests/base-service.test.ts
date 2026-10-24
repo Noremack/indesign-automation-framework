@@ -161,7 +161,27 @@ describe("BaseService Invariant Execution", () => {
     expect(parsed.message).toContain("Simulated failure in processing");
 
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Diagnostic report copied to clipboard. Paste into your AI assistant for instant debugging.")
+      expect.stringContaining("[Notice] A diagnostic report was copied to your clipboard. Paste into your AI assistant for instant debugging.")
+    );
+
+    logSpy.mockRestore();
+  });
+
+  it("respects autoCopyDiagnostics: false and does not copy to clipboard", () => {
+    const service = new FailingService();
+    const doc = new MockDocument();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = service.execute(doc, { autoCopyDiagnostics: false, notifyOnCompletion: true });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+
+    // Verify notification does NOT include clipboard copy notice
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[Notification] Failing Service: Operation failed: Simulated failure in processing")
+    );
+    expect(logSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("[Notice] Failure diagnostic payload copied")
     );
 
     logSpy.mockRestore();

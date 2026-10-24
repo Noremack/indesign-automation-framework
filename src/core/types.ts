@@ -43,5 +43,6 @@ export interface BaseBatchOptions {
   scope?: ExecutionScope;
   notifyOnCompletion?: boolean;
   dryRun?: boolean;
+  autoCopyDiagnostics?: boolean;
 }
 

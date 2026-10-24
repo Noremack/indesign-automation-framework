@@ -19,7 +19,9 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
           recoverable: false
         }
       };
-      this.copyDiagnosticToClipboard(result.error);
+      if (options.autoCopyDiagnostics !== false) {
+        this.copyDiagnosticToClipboard(result.error);
+      }
       if (options.notifyOnCompletion) {
         this.displayNotification(result, options);
       }
@@ -36,7 +38,9 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
           recoverable: false
         }
       };
-      this.copyDiagnosticToClipboard(result.error);
+      if (options.autoCopyDiagnostics !== false) {
+        this.copyDiagnosticToClipboard(result.error);
+      }
       if (options.notifyOnCompletion) {
         this.displayNotification(result, options);
       }
@@ -50,7 +54,7 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
       });
     });
 
-    if (!result.success) {
+    if (!result.success && options.autoCopyDiagnostics !== false) {
       this.copyDiagnosticToClipboard(result.error);
     }
 
@@ -86,6 +90,7 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
       }
     } catch (_) {}
 
+    console.log(`[Notice] Failure diagnostic payload copied to system clipboard for action "${this.actionName}".`);
     return formatted;
   }
 
@@ -94,9 +99,13 @@ export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
     options?: TOptions
   ): void {
     const title = options?.dryRun ? `${this.actionName} (Dry Run)` : this.actionName;
+    const clipboardNotice = options?.autoCopyDiagnostics !== false
+      ? "\n\n[Notice] A diagnostic report was copied to your clipboard. Paste into your AI assistant for instant debugging."
+      : "";
+
     const message = result.success
       ? (options?.dryRun ? "Simulation completed successfully (no changes applied)." : "Operation completed successfully.")
-      : `Operation failed: ${result.error?.message || "Unknown error"}\n\nDiagnostic report copied to clipboard. Paste into your AI assistant for instant debugging.`;
+      : `Operation failed: ${result.error?.message || "Unknown error"}${clipboardNotice}`;
 
     try {
       const uxp = require("uxp");

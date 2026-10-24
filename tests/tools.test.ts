@@ -106,5 +106,51 @@ describe("Support Tools & Adapters", () => {
       }).toThrow(/No error diagnostic input provided/);
     });
   });
+
+  describe("lint-invariants", () => {
+    it("detects banned APIs such as Folder, File, and doc.allPageItems", async () => {
+      const { lintFile } = await import("../tools/lint-invariants.mjs");
+      const badCode = `
+        const f = new Folder("/c/test");
+        const docItems = doc.allPageItems;
+        $.writeln("debug message");
+      `;
+
+      const violations = lintFile("bad-script.ts", badCode);
+      expect(violations.length).toBe(3);
+      expect(violations.map(v => v.rule)).toEqual([
+        "BANNED_API_FOLDER",
+        "BANNED_UNSCOPED_PAGEITEMS",
+        "BANNED_API_WRITELN"
+      ]);
+    });
+
+    it("passes cleanly on valid code using framework invariants", async () => {
+      const { lintFile } = await import("../tools/lint-invariants.mjs");
+      const goodCode = `
+        const pages = doc.pages.everyItem().getElements();
+        for (let i = pages.length - 1; i >= 0; i--) {
+          const items = pages[i].pageItems.everyItem().getElements();
+        }
+      `;
+
+      const violations = lintFile("good-service.ts", goodCode);
+      expect(violations.length).toBe(0);
+    });
+  });
+
+  describe("prompt-wizard", () => {
+    it("assembles prompt using selected preset non-interactively", async () => {
+      const { runPromptWizard } = await import("../tools/prompt-wizard.mjs");
+      const result = await runPromptWizard({
+        presetChoice: "1",
+        task: "Align headline frames to top margin"
+      });
+
+      expect(result.prompt).toContain("Default Safe Preset");
+      expect(result.prompt).toContain("Align headline frames to top margin");
+      expect(result.intakeSummary).toContain("1C, 2A, 3D, 4B");
+    });
+  });
 });
 

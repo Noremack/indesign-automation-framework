@@ -13,7 +13,9 @@
     "PATHS: Use PathUtils for all path resolution; never concatenate strings with slashes.",
     "MEMORY: Forbid unscoped doc.allPageItems; iterate by Page or Spread.",
     "DRY_RUN: Support dryRun?: boolean in options; check if (!options.dryRun) before DOM mutations.",
-    "ERROR_DIAGNOSTICS: BaseService automatically copies structured failure payloads to clipboard. Use npm run prompt:fix for instant repair prompts."
+    "ERROR_DIAGNOSTICS: BaseService automatically copies structured failure payloads to clipboard with prominent notice. Use npm run prompt:fix for instant repair prompts.",
+    "CLIPBOARD_NOTICE: Never write to the system clipboard silently. Always provide prominent, explicit notice to the developer ([Notice] ...).",
+    "PIPELINE: Chain multi-service batch operations using PipelineService within a single atomic host transaction."
   ],
   "presets": {
     "default_safe": "1C, 2A, 3D, 4B (Active Spread, Preserve Overrides, No Geometry, Permissive)",
