@@ -535,15 +535,44 @@ export class MockMarginPreferences {
   }
 }
 
+export class MockRectangle {
+  public id = Math.floor(Math.random() * 10000) + 1000;
+  public isValid = true;
+  public name = "";
+  public label = "";
+  public geometricBounds: [number, number, number, number] = [0, 0, 0, 0];
+  public fillColor: any = null;
+  public strokeColor: any = null;
+  public strokeWeight = 0;
+  public appliedObjectStyle: any = null;
+  public itemLayer: any = null;
+  public locked = false;
+  public visible = true;
+  public topLeftCornerOption: any = null;
+  public topRightCornerOption: any = null;
+  public bottomLeftCornerOption: any = null;
+  public bottomRightCornerOption: any = null;
+  public topLeftCornerRadius = 0;
+  public topRightCornerRadius = 0;
+  public bottomLeftCornerRadius = 0;
+  public bottomRightCornerRadius = 0;
+
+  constructor(props: Partial<MockRectangle> = {}) {
+    Object.assign(this, props);
+  }
+}
+
 export class MockPage {
   public id = 100;
   public isValid = true;
   public name = "1";
+  public side: any = "right";
   public bounds: [number, number, number, number] = [0, 0, 841.89, 595.28]; // A4 in points (297x210 mm)
   public appliedMaster: any = null;
   public marginPreferences = new MockMarginPreferences();
   public pageItems = new MockCollection<any>([]);
   public textFrames = new MockCollection<MockTextFrame>([]);
+  public rectangles = new MockCollection<MockRectangle>([]);
 
   constructor(props: Partial<MockPage> = {}) {
     Object.assign(this, props);
@@ -558,6 +587,16 @@ export class MockPage {
       }
       this.pageItems.add(frame);
       return frame;
+    };
+    this.rectangles.itemFactory = (p) => {
+      let rect: MockRectangle;
+      if (p instanceof MockRectangle) {
+        rect = p;
+      } else {
+        rect = new MockRectangle(p);
+      }
+      this.pageItems.add(rect);
+      return rect;
     };
   }
 }

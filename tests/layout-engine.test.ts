@@ -92,6 +92,7 @@ describe("QGDS Layout & Master Spread Engine", () => {
     const result = service.execute(doc, {
       publicationTitle: "Test Report",
       cleanMasters: true,
+      injectDecorations: false,
       autoCopyDiagnostics: false,
       notifyOnCompletion: false
     });

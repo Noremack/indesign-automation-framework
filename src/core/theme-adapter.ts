@@ -166,6 +166,13 @@ export class BrandThemeAdapter {
   }
 
   /**
+   * Returns object styles declared for this tenant.
+   */
+  public getObjectStyles(): StyleDeclaration[] {
+    return this.pkg.styles?.object || [];
+  }
+
+  /**
    * Returns layer hierarchy specifications declared for this tenant.
    */
   public getLayers(): Array<{ name: string; zIndex?: number; locked?: boolean }> {

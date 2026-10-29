@@ -150,6 +150,7 @@ export interface TenantBrandPackage {
     character?: StyleDeclaration[];
     cell?: StyleDeclaration[];
     table?: StyleDeclaration[];
+    object?: StyleDeclaration[];
   };
   layoutPresets?: LayoutFormatPreset[];
   exportPresets?: ExportPresets;

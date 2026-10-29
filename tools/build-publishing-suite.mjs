@@ -73,6 +73,15 @@ const fullSpecimenStyles = (rawTokens.specimenStyles || []).map(s => ({
   style: cleanStyleName(s.style)
 }));
 
+// 4b. Prepare full object styles from qgds-tokens.ts
+const tokensTs = fs.readFileSync("src/core/qgds-tokens.ts", "utf8");
+const objMatch = tokensTs.match(/export const DEFAULT_QGDS_OBJECT_STYLES = (\[[\s\S]*?\n\]);/);
+let fullObjectStyles = [];
+if (objMatch) {
+  const cleaned = objMatch[1].replace(/\s+as\s+const/g, "");
+  fullObjectStyles = eval(cleaned);
+}
+
 // 5. Prepare abbreviations (including QGDS)
 const fullAbbr = {
   "QGDS": { expansions: ["Queensland Government Design System"], enabled: true }
@@ -89,6 +98,9 @@ const fullActs = Object.keys(rawLeg.legislation).filter(k => rawLeg.legislation[
 console.log(`Embedding ${fullColors.length} colors, ${fullGradients.length} gradients, ${fullPageMatrix.length} page formats, ${fullParagraphStyles.length} paragraph styles, ${fullCharacterStyles.length} character styles, ${Object.keys(fullAbbr).length} abbreviations, and ${fullActs.length} acts...`);
 
 let content = fs.readFileSync(targetPath, "utf8");
+if (content.startsWith("(function () {")) {
+    content = content.replace(/^\(function \(\) \{\s*(?:'use strict';\s*)?/, "'use strict';\n").replace(/\n\}\)\(\);\s*$/, "");
+}
 
 // --- DomResolver Full Implementation ---
 const fullDomResolver = `class DomResolver {
@@ -284,11 +296,18 @@ const fullDomResolver = `class DomResolver {
         }
         let style = targetCollection.itemByName(name);
         if (!style || !style.isValid) {
-            style = this.getParagraphStyleSafely(doc, name);
+            try {
+                style = targetCollection.add({ name });
+            } catch (_) {
+                try {
+                    style = targetCollection.add();
+                    style.name = name;
+                } catch (_) {
+                    style = this.getParagraphStyleSafely(doc, name);
+                }
+            }
         }
-        if (!style || !style.isValid) {
-            style = targetCollection.add({ name, ...props });
-        } else if (props && Object.keys(props).length > 0) {
+        if (style && style.isValid && props && Object.keys(props).length > 0) {
             try {
                 for (const [k, v] of Object.entries(props)) {
                     try { style[k] = v; } catch (_) {}
@@ -317,11 +336,18 @@ const fullDomResolver = `class DomResolver {
         }
         let style = targetCollection.itemByName(name);
         if (!style || !style.isValid) {
-            style = this.getCharacterStyleSafely(doc, name);
+            try {
+                style = targetCollection.add({ name });
+            } catch (_) {
+                try {
+                    style = targetCollection.add();
+                    style.name = name;
+                } catch (_) {
+                    style = this.getCharacterStyleSafely(doc, name);
+                }
+            }
         }
-        if (!style || !style.isValid) {
-            style = targetCollection.add({ name, ...props });
-        } else if (props && Object.keys(props).length > 0) {
+        if (style && style.isValid && props && Object.keys(props).length > 0) {
             try {
                 for (const [k, v] of Object.entries(props)) {
                     try { style[k] = v; } catch (_) {}
@@ -350,11 +376,18 @@ const fullDomResolver = `class DomResolver {
         }
         let style = targetCollection.itemByName(name);
         if (!style || !style.isValid) {
-            style = this.getCellStyleSafely(doc, name);
+            try {
+                style = targetCollection.add({ name });
+            } catch (_) {
+                try {
+                    style = targetCollection.add();
+                    style.name = name;
+                } catch (_) {
+                    style = this.getCellStyleSafely(doc, name);
+                }
+            }
         }
-        if (!style || !style.isValid) {
-            style = targetCollection.add({ name, ...props });
-        } else if (props && Object.keys(props).length > 0) {
+        if (style && style.isValid && props && Object.keys(props).length > 0) {
             try {
                 for (const [k, v] of Object.entries(props)) {
                     try { style[k] = v; } catch (_) {}
@@ -374,11 +407,18 @@ const fullDomResolver = `class DomResolver {
         }
         let style = targetCollection.itemByName(name);
         if (!style || !style.isValid) {
-            style = this.getTableStyleSafely(doc, name);
+            try {
+                style = targetCollection.add({ name });
+            } catch (_) {
+                try {
+                    style = targetCollection.add();
+                    style.name = name;
+                } catch (_) {
+                    style = this.getTableStyleSafely(doc, name);
+                }
+            }
         }
-        if (!style || !style.isValid) {
-            style = targetCollection.add({ name, ...props });
-        } else if (props && Object.keys(props).length > 0) {
+        if (style && style.isValid && props && Object.keys(props).length > 0) {
             try {
                 for (const [k, v] of Object.entries(props)) {
                     try { style[k] = v; } catch (_) {}
@@ -398,10 +438,27 @@ const fullDomResolver = `class DomResolver {
                 targetCollection = grp.objectStyles;
             }
         }
-        return targetCollection.add({
-            name,
-            ...properties
-        });
+        let style = targetCollection.itemByName(name);
+        if (!style || !style.isValid) {
+            try {
+                style = targetCollection.add({ name });
+            } catch (_) {
+                try {
+                    style = targetCollection.add();
+                    style.name = name;
+                } catch (_) {
+                    style = this.getObjectStyleSafely(doc, name);
+                }
+            }
+        }
+        if (style && style.isValid && properties && Object.keys(properties).length > 0) {
+            try {
+                for (const [k, v] of Object.entries(properties)) {
+                    try { style[k] = v; } catch (_) {}
+                }
+            } catch (_) {}
+        }
+        return style;
     }
     static findStyleInGroups(groupsCollection, styleProp, styleNames) {
         if (!groupsCollection)
@@ -596,34 +653,126 @@ class LayoutPlanner {
             marginMm = params.marginOverrideMm;
         }
         const marginPt = marginMm / PT_TO_MM;
+        const brandLayer = (params.layerNames && params.layerNames.brandAssets) || "Brand Assets / Badges";
         const headerFooterLayer = (params.layerNames && params.layerNames.headersFooters) || "Headers & Footers";
+        const bleedPt = 3 / PT_TO_MM;
+        const isAboveA3 = Math.max(widthMm, heightMm) > 420;
 
         const masterPlans = masterDefinitions.map(def => {
-            const isCover = def.name.toLowerCase().includes("cover");
-            const topM = isCover ? Math.round(marginMm * 1.5) : marginMm;
-            const botM = isCover ? Math.round(marginMm * 1.5) : marginMm;
+            const lowerName = def.name.toLowerCase();
+            const isCover = lowerName.includes("cover");
+            const isBack = lowerName.includes("back");
+            const isSinglePage = isCover || isBack;
+            const topM = (isCover && !isAboveA3) ? Math.round(marginMm * 1.5) : marginMm;
+            const botM = (isCover && !isAboveA3) ? Math.round(marginMm * 1.5) : marginMm;
+
+            const decorations = [];
             const folios = [];
-            if (def.injectFolio) {
-                const footerY1 = heightPt - marginPt;
-                const footerY2 = heightPt - Math.max(10, marginPt / 2);
-                folios.push({
-                    geometricBounds: [footerY1, marginPt, footerY2, widthPt - marginPt],
-                    text: publicationTitle + "  |  Page \\u0018",
-                    pointSize: Math.max(8, Math.round(9 * scalingFactor)),
-                    label: "DynamicContentFooter",
-                    name: "Running Folio",
-                    layerName: headerFooterLayer
+
+            if (isCover) {
+                const scaledHeaderH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+                decorations.push({
+                    name: "Brand bar - Small",
+                    label: "DynamicBrandHeader",
+                    layerName: brandLayer,
+                    geometricBounds: [-bleedPt, -bleedPt, scaledHeaderH, widthPt - marginPt],
+                    fillColorRole: "themeGradient",
+                    objectStyleName: "Medium - Rounded Bottom Right",
+                    objectStyleGroup: "Frames - Radius Large",
+                    bottomRightCornerOption: 1852797549,
+                    bottomRightCornerRadius: 22.68 * scalingFactor,
+                    visible: true
+                });
+
+                const scaledFooterH = Math.max(35, heightPt * 0.10);
+                decorations.push({
+                    name: "Cover Footer Banner",
+                    label: "DynamicBrandFooter",
+                    layerName: brandLayer,
+                    geometricBounds: [heightPt - scaledFooterH, -bleedPt, heightPt + bleedPt, widthPt + bleedPt],
+                    fillColorRole: "themeGradient",
+                    visible: true
+                });
+            } else if (isBack) {
+                const scaledBackCoverH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
+                decorations.push({
+                    name: "Back Cover Background",
+                    label: "DynamicBrandBackCover",
+                    layerName: brandLayer,
+                    geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
+                    fillColorRole: "themeGradient",
+                    objectStyleName: "Medium - Rounded Top Left",
+                    objectStyleGroup: "Frames - Radius Large",
+                    topLeftCornerOption: 1852797549,
+                    topLeftCornerRadius: 22.68 * scalingFactor,
+                    visible: true
                 });
             }
+
+            if (def.injectFolio) {
+                const liveW = widthPt - 2 * marginPt;
+                const footerY1 = heightPt - marginPt;
+                const footerY2 = heightPt - Math.max(10, marginPt / 2);
+                const fontSize = Math.max(8, Math.round(9 * scalingFactor));
+
+                // Left Page
+                folios.push({
+                    geometricBounds: [footerY1, marginPt, footerY2, marginPt + liveW * 0.2],
+                    text: "\\u0018",
+                    pointSize: fontSize,
+                    label: "DynamicContentFooter",
+                    name: "Content Footer - Page Number (Left)",
+                    layerName: headerFooterLayer,
+                    side: "left",
+                    justification: 1818584692,
+                    isAutoPageNumber: true
+                });
+                folios.push({
+                    geometricBounds: [footerY1, marginPt + liveW * 0.25, footerY2, widthPt - marginPt],
+                    text: publicationTitle,
+                    pointSize: fontSize,
+                    label: "DynamicContentFooter",
+                    name: "Content Footer - Document Title (Left)",
+                    layerName: headerFooterLayer,
+                    side: "left",
+                    justification: 1919379572
+                });
+
+                // Right Page
+                folios.push({
+                    geometricBounds: [footerY1, marginPt, footerY2, widthPt - marginPt - liveW * 0.25],
+                    text: publicationTitle,
+                    pointSize: fontSize,
+                    label: "DynamicContentFooter",
+                    name: "Content Footer - Document Title (Right)",
+                    layerName: headerFooterLayer,
+                    side: "right",
+                    justification: 1818584692
+                });
+                folios.push({
+                    geometricBounds: [footerY1, widthPt - marginPt - liveW * 0.2, footerY2, widthPt - marginPt],
+                    text: "\\u0018",
+                    pointSize: fontSize,
+                    label: "DynamicContentFooter",
+                    name: "Content Footer - Page Number (Right)",
+                    layerName: headerFooterLayer,
+                    side: "right",
+                    justification: 1919379572,
+                    isAutoPageNumber: true
+                });
+            }
+
             return {
                 prefix: def.prefix,
                 baseName: def.name,
                 fullName: def.prefix + "-" + def.name,
                 isCover,
+                isSinglePage,
                 marginsMm: { top: topM, bottom: botM, left: marginMm, right: marginMm },
                 marginsPt: { top: topM / PT_TO_MM, bottom: botM / PT_TO_MM, left: marginPt, right: marginPt },
                 gutterMm,
-                folios
+                folios,
+                decorations
             };
         });
 
@@ -872,8 +1021,12 @@ const DEFAULT_QGDS_PARAGRAPH_STYLES = ${JSON.stringify(fullParagraphStyles, null
 const DEFAULT_QGDS_CHARACTER_STYLES = ${JSON.stringify(fullCharacterStyles, null, 4)};
 const DEFAULT_QGDS_CELL_STYLES = ${JSON.stringify(fullCellStyles, null, 4)};
 const DEFAULT_QGDS_TABLE_STYLES = ${JSON.stringify(fullTableStyles, null, 4)};
+const DEFAULT_QGDS_OBJECT_STYLES = ${JSON.stringify(fullObjectStyles, null, 4)};
 const DEFAULT_QGDS_SPECIMEN_STYLES = ${JSON.stringify(fullSpecimenStyles, null, 4)};
 `;
+
+// Remove duplicate downstream definition if present after DEFAULT_QGDS_LAYERS
+content = content.replace(/(const DEFAULT_QGDS_LAYERS = \[[\s\S]*?\r?\n\];)\s*const DEFAULT_QGDS_OBJECT_STYLES = \[[\s\S]*?\r?\n\];/s, "$1");
 
 if (content.includes("const DEFAULT_QGDS_PAGE_MATRIX =")) {
     content = content.replace(/const DEFAULT_QGDS_PAGE_MATRIX =[\s\S]*?(?=const DEFAULT_QGDS_COLORS =)/s, `${embeddedMatricesBlock}\n`);
@@ -983,7 +1136,8 @@ class QgdsLayoutEngineService extends BaseService {
             }
         }
 
-        // 2. Master Spreads (A-Cover, B-Content, C-Back)
+        // 2. Master Spreads Execution (Adoption, Renaming, Single-Page Enforcement & Cleaning)
+        const masterSpreadsMap = {};
         let aCoverMaster = null;
         let bContentMaster = null;
         let cBackMaster = null;
@@ -991,25 +1145,67 @@ class QgdsLayoutEngineService extends BaseService {
         if (options.createMasters !== false && doc.masterSpreads) {
             try {
                 const requiredMasters = [
-                    { prefix: "A", baseName: "Cover" },
-                    { prefix: "B", baseName: "Content" },
-                    { prefix: "C", baseName: "Back" }
+                    { prefix: "A", baseName: "Cover", searchStr: "cover", aliases: ["a-master", "a-parent", "master a", "parent a"], isSinglePage: true },
+                    { prefix: "B", baseName: "Content", searchStr: "content", aliases: ["b-master", "b-parent", "master b", "parent b"], isSinglePage: false },
+                    { prefix: "C", baseName: "Back", searchStr: "back", aliases: ["c-master", "c-parent", "master c", "parent c"], isSinglePage: true }
                 ];
+                const adoptedMasterIds = new Set();
+                const currentMasters = doc.masterSpreads.everyItem ? doc.masterSpreads.everyItem().getElements() : [];
+
                 for (let r = 0; r < requiredMasters.length; r++) {
                     const req = requiredMasters[r];
                     let foundMaster = null;
-                    const currentMasters = doc.masterSpreads.everyItem ? doc.masterSpreads.everyItem().getElements() : [];
+
+                    // 1. Exact match
                     for (let m = 0; m < currentMasters.length; m++) {
                         const cm = currentMasters[m];
-                        if (cm.isValid && (cm.name === (req.prefix + "-" + req.baseName) || (cm.namePrefix === req.prefix && cm.baseName === req.baseName))) {
+                        if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && (cm.name === (req.prefix + "-" + req.baseName) || (cm.namePrefix === req.prefix && cm.baseName === req.baseName))) {
                             foundMaster = cm;
                             break;
                         }
                     }
+
+                    // 2. Substring match
                     if (!foundMaster) {
                         for (let m = 0; m < currentMasters.length; m++) {
                             const cm = currentMasters[m];
-                            if (cm.isValid && cm.namePrefix === req.prefix) {
+                            if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.name && cm.name.toLowerCase().indexOf(req.searchStr) !== -1) {
+                                try {
+                                    if (!options.dryRun) {
+                                        cm.namePrefix = req.prefix;
+                                        cm.baseName = req.baseName;
+                                    }
+                                    foundMaster = cm;
+                                    report.mastersCreated.push(req.prefix + "-" + req.baseName);
+                                    break;
+                                } catch (_) {}
+                            }
+                        }
+                    }
+
+                    // 3. Known Aliases
+                    if (!foundMaster) {
+                        for (let m = 0; m < currentMasters.length; m++) {
+                            const cm = currentMasters[m];
+                            if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.name && req.aliases.indexOf(cm.name.toLowerCase().trim()) !== -1) {
+                                try {
+                                    if (!options.dryRun) {
+                                        cm.namePrefix = req.prefix;
+                                        cm.baseName = req.baseName;
+                                    }
+                                    foundMaster = cm;
+                                    report.mastersCreated.push(req.prefix + "-" + req.baseName);
+                                    break;
+                                } catch (_) {}
+                            }
+                        }
+                    }
+
+                    // 4. Prefix match
+                    if (!foundMaster) {
+                        for (let m = 0; m < currentMasters.length; m++) {
+                            const cm = currentMasters[m];
+                            if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.namePrefix === req.prefix) {
                                 try {
                                     if (!options.dryRun) {
                                         cm.baseName = req.baseName;
@@ -1021,6 +1217,8 @@ class QgdsLayoutEngineService extends BaseService {
                             }
                         }
                     }
+
+                    // 5. Create new master spread
                     if (!foundMaster && !options.dryRun) {
                         try {
                             const newM = doc.masterSpreads.add();
@@ -1031,29 +1229,60 @@ class QgdsLayoutEngineService extends BaseService {
                         } catch (_) {}
                     }
 
-                    // Purge existing items from master pages if cleaning is enabled
-                    if (foundMaster && foundMaster.isValid && options.cleanMasters !== false && !options.dryRun) {
-                        const mPages = foundMaster.pages?.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
-                        for (let p = 0; p < mPages.length; p++) {
-                            const mp = mPages[p];
-                            if (!mp || !mp.isValid) continue;
-                            const pItems = mp.pageItems?.everyItem ? mp.pageItems.everyItem().getElements() : (mp.pageItems || []);
-                            for (let pi = pItems.length - 1; pi >= 0; pi--) {
-                                const item = pItems[pi];
-                                if (item && item.isValid) {
-                                    try {
-                                        if (item.itemLayer && item.itemLayer.isValid && item.itemLayer.locked) item.itemLayer.locked = false;
-                                        if (item.locked) item.locked = false;
-                                        item.remove();
-                                    } catch (_) {}
+                    if (foundMaster && foundMaster.isValid) {
+                        adoptedMasterIds.add(foundMaster.id || foundMaster);
+
+                        // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK
+                        if (req.isSinglePage && !options.dryRun && foundMaster.pages) {
+                            try {
+                                const mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : foundMaster.pages;
+                                while (mPages.length > 1) {
+                                    const pToRemove = mPages.pop();
+                                    if (pToRemove && pToRemove.isValid) {
+                                        try { pToRemove.remove(); } catch (_) {}
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+
+                        // Purge existing items if cleanMasters is enabled
+                        if (options.cleanMasters !== false && !options.dryRun) {
+                            const mPages = foundMaster.pages?.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
+                            for (let p = 0; p < mPages.length; p++) {
+                                const mp = mPages[p];
+                                if (!mp || !mp.isValid) continue;
+                                const pItems = mp.pageItems?.everyItem ? mp.pageItems.everyItem().getElements() : (mp.pageItems || []);
+                                for (let pi = pItems.length - 1; pi >= 0; pi--) {
+                                    const item = pItems[pi];
+                                    if (item && item.isValid) {
+                                        try {
+                                            if (item.itemLayer && item.itemLayer.isValid && item.itemLayer.locked) item.itemLayer.locked = false;
+                                            if (item.locked) item.locked = false;
+                                            item.remove();
+                                        } catch (_) {}
+                                    }
                                 }
                             }
                         }
                     }
 
+                    masterSpreadsMap[req.prefix] = foundMaster;
                     if (req.prefix === "A") aCoverMaster = foundMaster;
                     if (req.prefix === "B") bContentMaster = foundMaster;
                     if (req.prefix === "C") cBackMaster = foundMaster;
+                }
+
+                // Cleanup unused empty default "A-Master" / "A-Parent"
+                if (!options.dryRun) {
+                    for (let m = currentMasters.length - 1; m >= 0; m--) {
+                        const cm = currentMasters[m];
+                        if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && (cm.name === "A-Master" || cm.name === "A-Parent")) {
+                            const items = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : cm.pageItems || [];
+                            if (items.length === 0) {
+                                try { cm.remove(); } catch (_) {}
+                            }
+                        }
+                    }
                 }
             } catch (err) {
                 if (options.failurePolicy === "strict") throw err;
@@ -1118,62 +1347,190 @@ class QgdsLayoutEngineService extends BaseService {
                         report.pagesRemapped++;
                     }
                 }
-                if (aCoverMaster && aCoverMaster.isValid && doc.masterSpreads) {
-                    const masters = doc.masterSpreads.everyItem ? doc.masterSpreads.everyItem().getElements() : [];
-                    for (let m = masters.length - 1; m >= 0; m--) {
-                        const ms = masters[m];
-                        if (ms && ms.isValid && (ms.name === "A-Master" || ms.name === "A-Parent")) {
-                            const items = ms.pageItems?.everyItem ? ms.pageItems.everyItem().getElements() : ms.pageItems || [];
-                            if (items.length === 0) {
-                                try { ms.remove(); } catch (_) {}
-                            }
-                        }
-                    }
-                }
             } catch (err) {
                 if (options.failurePolicy === "strict") throw err;
                 report.skippedCount++;
             }
         }
 
-        // 5. Inject Footers on B-Content Master
-        if (options.injectFooters !== false && !options.dryRun && bContentMaster && bContentMaster.isValid) {
+        // 5. Inject Brand Decorations & Running Folios
+        if (!options.dryRun) {
             try {
-                const cPages = bContentMaster.pages?.everyItem ? bContentMaster.pages.everyItem().getElements() : [];
-                const pubTitle = options.publicationTitle || (doc.name ? String(doc.name).replace(/\\.[^.]+$/, "") : "Queensland Government Publication");
-                let footerLayer = doc.layers?.itemByName("Headers & Footers");
-                if (!footerLayer || !footerLayer.isValid) {
-                    footerLayer = doc.layers ? doc.layers[0] : null;
-                }
+                const themeName = options.theme || "Blue";
+                const gradientName = themeName + " - Gradient";
+                const themeGrad = doc.gradients?.itemByName ? doc.gradients.itemByName(gradientName) : null;
+                const themeColor = doc.colors?.itemByName ? (doc.colors.itemByName(themeName + " - Medium")?.isValid ? doc.colors.itemByName(themeName + " - Medium") : doc.colors.itemByName(themeName + " - Dark")) : null;
+                const fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : ((themeColor && themeColor.isValid) ? themeColor : null);
 
-                for (let cpIdx = 0; cpIdx < cPages.length; cpIdx++) {
-                    const cp = cPages[cpIdx];
-                    if (!cp || !cp.isValid || !cp.textFrames) continue;
-                    if (cp.textFrames.everyItem) {
-                        const tfs = cp.textFrames.everyItem().getElements();
-                        for (let ti = tfs.length - 1; ti >= 0; ti--) {
-                            if (tfs[ti].label === "DynamicContentFooter" || tfs[ti].label === "DynamicBrandFooter" || tfs[ti].name === "Running Folio" || tfs[ti].name === "DynamicBrandFooter") {
-                                try { tfs[ti].remove(); } catch (_) {}
+                const brandLayer = doc.layers?.itemByName ? (doc.layers.itemByName("Brand Assets / Badges")?.isValid ? doc.layers.itemByName("Brand Assets / Badges") : doc.layers.itemByName("Brand Assets")) : null;
+                const hfLayer = doc.layers?.itemByName ? doc.layers.itemByName("Headers & Footers") : null;
+                const bleedPt = 3 / PT_TO_MM;
+                const pWidthPt = metrics.shortEdge / PT_TO_MM;
+                const pHeightPt = metrics.longEdge / PT_TO_MM;
+
+                // A-Cover: Brand bar - Small & Cover Footer Banner
+                if (aCoverMaster && aCoverMaster.isValid && aCoverMaster.pages) {
+                    const cp = aCoverMaster.pages[0];
+                    if (cp && cp.isValid && cp.rectangles) {
+                        const bounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
+                        const pw = Math.abs(bounds[3] - bounds[1]);
+                        const ph = Math.abs(bounds[2] - bounds[0]);
+                        const scaledH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+
+                        const barRect = cp.rectangles.add({
+                            label: "DynamicBrandHeader",
+                            name: "Brand bar - Small",
+                            geometricBounds: [-bleedPt, -bleedPt, scaledH, pw - baseMarginPt],
+                            itemLayer: brandLayer || doc.layers[0]
+                        });
+                        if (barRect && barRect.isValid) {
+                            barRect.strokeWeight = 0;
+                            if (fillTarget) barRect.fillColor = fillTarget;
+                            if (doc.swatches) {
+                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                if (swNone && swNone.isValid) barRect.strokeColor = swNone;
+                            }
+                            const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Bottom Right", "Frames - Radius Large");
+                            if (objStyle && objStyle.isValid) {
+                                try { barRect.appliedObjectStyle = objStyle; } catch (_) {}
+                            } else {
+                                if (barRect.bottomRightCornerOption !== undefined) {
+                                    barRect.bottomRightCornerOption = 1852797549;
+                                    barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
+                                }
+                            }
+                        }
+
+                        const scaledFootH = Math.max(35, ph * 0.10);
+                        const footRect = cp.rectangles.add({
+                            label: "DynamicBrandFooter",
+                            name: "Cover Footer Banner",
+                            geometricBounds: [ph - scaledFootH, -bleedPt, ph + bleedPt, pw + bleedPt],
+                            itemLayer: brandLayer || doc.layers[0]
+                        });
+                        if (footRect && footRect.isValid) {
+                            footRect.strokeWeight = 0;
+                            if (fillTarget) footRect.fillColor = fillTarget;
+                            if (doc.swatches) {
+                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                if (swNone && swNone.isValid) footRect.strokeColor = swNone;
                             }
                         }
                     }
-                    const pageBounds = cp.bounds || [0, 0, 841.89, 595.28];
-                    const pageW = Math.abs(pageBounds[3] - pageBounds[1]);
-                    const pageH = Math.abs(pageBounds[2] - pageBounds[0]);
-                    const footerY1 = pageH - baseMarginPt;
-                    const footerY2 = pageH - Math.max(10, baseMarginPt / 2);
+                }
 
-                    const tfFolio = cp.textFrames.add({
-                        label: "DynamicContentFooter",
-                        geometricBounds: [footerY1, baseMarginPt, footerY2, pageW - baseMarginPt],
-                        itemLayer: footerLayer
-                    });
-                    try {
-                        tfFolio.contents = pubTitle + "  |  Page " + String.fromCharCode(0x0018);
-                    } catch (_) {
-                        tfFolio.contents = pubTitle + "  |  Page ";
+                // C-Back: Back Cover Background
+                if (cBackMaster && cBackMaster.isValid && cBackMaster.pages) {
+                    const bp = cBackMaster.pages[0];
+                    if (bp && bp.isValid && bp.rectangles) {
+                        const bounds = bp.bounds || [0, 0, pHeightPt, pWidthPt];
+                        const pw = Math.abs(bounds[3] - bounds[1]);
+                        const ph = Math.abs(bounds[2] - bounds[0]);
+                        const scaledBackH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
+
+                        const backRect = bp.rectangles.add({
+                            label: "DynamicBrandBackCover",
+                            name: "Back Cover Background",
+                            geometricBounds: [ph - scaledBackH, baseMarginPt, ph + bleedPt, pw + bleedPt],
+                            itemLayer: brandLayer || doc.layers[0]
+                        });
+                        if (backRect && backRect.isValid) {
+                            backRect.strokeWeight = 0;
+                            if (fillTarget) backRect.fillColor = fillTarget;
+                            if (doc.swatches) {
+                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                if (swNone && swNone.isValid) backRect.strokeColor = swNone;
+                            }
+                            const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Top Left", "Frames - Radius Large");
+                            if (objStyle && objStyle.isValid) {
+                                try { backRect.appliedObjectStyle = objStyle; } catch (_) {}
+                            } else {
+                                if (backRect.topLeftCornerOption !== undefined) {
+                                    backRect.topLeftCornerOption = 1852797549;
+                                    backRect.topLeftCornerRadius = 22.68 * scalingFactor;
+                                }
+                            }
+                        }
                     }
-                    report.footersInjected++;
+                }
+
+                // B-Content: Running Folios
+                if (options.injectFooters !== false && bContentMaster && bContentMaster.isValid) {
+                    const cPages = bContentMaster.pages?.everyItem ? bContentMaster.pages.everyItem().getElements() : [];
+                    const pubTitle = options.publicationTitle || (doc.name ? String(doc.name).replace(/\\.[^.]+$/, "") : "Queensland Government Publication");
+                    const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers");
+                    const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character");
+
+                    for (let cpIdx = 0; cpIdx < cPages.length; cpIdx++) {
+                        const cp = cPages[cpIdx];
+                        if (!cp || !cp.isValid || !cp.textFrames) continue;
+                        if (cp.textFrames.everyItem) {
+                            const tfs = cp.textFrames.everyItem().getElements();
+                            for (let ti = tfs.length - 1; ti >= 0; ti--) {
+                                if (tfs[ti].label === "DynamicContentFooter" || tfs[ti].label === "DynamicBrandFooter" || tfs[ti].name === "Running Folio" || tfs[ti].name === "DynamicBrandFooter" || (tfs[ti].name && tfs[ti].name.indexOf("Content Footer") === 0)) {
+                                    try { tfs[ti].remove(); } catch (_) {}
+                                }
+                            }
+                        }
+                        const pageBounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
+                        const pw = Math.abs(pageBounds[3] - pageBounds[1]);
+                        const ph = Math.abs(pageBounds[2] - pageBounds[0]);
+                        const footerY1 = ph - baseMarginPt;
+                        const footerY2 = ph - Math.max(10, baseMarginPt / 2);
+                        const isLeft = cpIdx === 0 && cPages.length > 1;
+                        const liveW = pw - 2 * baseMarginPt;
+
+                        if (isLeft) {
+                            const tfNum = cp.textFrames.add({
+                                label: "DynamicContentFooter",
+                                name: "Content Footer - Page Number",
+                                geometricBounds: [footerY1, baseMarginPt, footerY2, baseMarginPt + liveW * 0.2],
+                                itemLayer: hfLayer || doc.layers[0]
+                            });
+                            const tfTitle = cp.textFrames.add({
+                                label: "DynamicContentFooter",
+                                name: "Content Footer - Document Title",
+                                geometricBounds: [footerY1, baseMarginPt + liveW * 0.25, footerY2, pw - baseMarginPt],
+                                itemLayer: hfLayer || doc.layers[0]
+                            });
+                            try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
+                            try { tfTitle.contents = pubTitle; } catch (_) {}
+                            if (tfNum.texts && tfNum.texts[0]) {
+                                if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
+                                tfNum.texts[0].justification = 1818584692;
+                                if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
+                            }
+                            if (tfTitle.texts && tfTitle.texts[0]) {
+                                if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
+                                tfTitle.texts[0].justification = 1919379572;
+                            }
+                        } else {
+                            const tfTitle = cp.textFrames.add({
+                                label: "DynamicContentFooter",
+                                name: "Content Footer - Document Title",
+                                geometricBounds: [footerY1, baseMarginPt, footerY2, pw - baseMarginPt - liveW * 0.25],
+                                itemLayer: hfLayer || doc.layers[0]
+                            });
+                            const tfNum = cp.textFrames.add({
+                                label: "DynamicContentFooter",
+                                name: "Content Footer - Page Number",
+                                geometricBounds: [footerY1, pw - baseMarginPt - liveW * 0.2, footerY2, pw - baseMarginPt],
+                                itemLayer: hfLayer || doc.layers[0]
+                            });
+                            try { tfTitle.contents = pubTitle; } catch (_) {}
+                            try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
+                            if (tfTitle.texts && tfTitle.texts[0]) {
+                                if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
+                                tfTitle.texts[0].justification = 1818584692;
+                            }
+                            if (tfNum.texts && tfNum.texts[0]) {
+                                if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
+                                tfNum.texts[0].justification = 1919379572;
+                                if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
+                            }
+                        }
+                        report.footersInjected++;
+                    }
                 }
             } catch (err) {
                 if (options.failurePolicy === "strict") throw err;
@@ -2314,22 +2671,210 @@ if (!content.includes("// 2b. Remap Previous Theme Gradients")) {
 content = content.replace(/"QGDS \/ Character"/g, '"Character"');
 content = content.replace(/"QGDS \/ Tables"/g, '"Tables"');
 
-// Replace arbitrary pointSize and leading with PhysicalTypographyEngine rules
-content = content.replace(
-    /const styleProps = \{ \.\.\.\(ps\.properties \|\| \{\}\) \};\s*(?:if \(typeof styleProps\.pointSize === "number"\) \{[\s\S]*?styleProps\.leading = Math\.round\(styleProps\.leading \* scale\);\s*\}|const role = ps\.scaleRole[\s\S]*?opticalTrackingOffset: 0\s*\}\);)/s,
-    `const styleProps = { ...(ps.properties || {}) };
-                    const role = ps.scaleRole || PhysicalTypographyEngine.detectTypographyRole(ps.name, groupPath);
-                    PhysicalTypographyEngine.applyPhysicalTypographyRules(styleProps, role, {
-                        baseBodyCapHeightMm: 2.4,
-                        capToEmRatio: 0.705,
-                        scaleRatio: 1.25,
-                        baselineGridPt: 4,
-                        opticalTrackingOffset: 0
-                    });`
-);
+// 4-8. Comprehensive Styles Ingestion Patch (Standard + Reverse Styles, Object Styles, Cell/Table Styles)
+const brandStylesFullPatch = `        // 4. Hierarchical Paragraph Styles (Standard + Reverse)
+        if (options.applyParagraphStyles !== false && doc.paragraphStyles) {
+            const themesToProcess = [{ theme: themeColors, isRev: false, prefix: "" }];
+            if (options.createReverseStyles !== false) {
+                const revThemeColors = (typeof getThemeColors === "function") ? getThemeColors(theme, true) : themeColors;
+                themesToProcess.push({ theme: revThemeColors, isRev: true, prefix: "Reverse / " });
+            }
+
+            for (const tInfo of themesToProcess) {
+                for (const ps of pStylesToInject) {
+                    currentStep++;
+                    this.reportProgress(options, \`Configuring paragraph style "\${ps.name}"\${tInfo.isRev ? " (Reverse)" : ""}\`, currentStep, totalSteps);
+                    try {
+                        const groupPath = tInfo.isRev ? (tInfo.prefix + ps.group) : ps.group;
+                        const styleProps = { ...(ps.properties || {}) };
+                        const role = ps.scaleRole || PhysicalTypographyEngine.detectTypographyRole(ps.name, groupPath);
+                        PhysicalTypographyEngine.applyPhysicalTypographyRules(styleProps, role, {
+                            baseBodyCapHeightMm: 2.4,
+                            capToEmRatio: 0.705,
+                            scaleRatio: 1.25,
+                            baselineGridPt: 4,
+                            opticalTrackingOffset: 0
+                        });
+
+                        if (ps.roleColor) {
+                            const swatchName = tInfo.theme[ps.roleColor];
+                            if (swatchName === "Paper") {
+                                styleProps.fillColor = "Paper";
+                            } else if (swatchName && doc.colors) {
+                                const sw = doc.colors.itemByName(swatchName);
+                                if (sw && sw.isValid) {
+                                    styleProps.fillColor = sw;
+                                }
+                            }
+                        }
+
+                        if (!options.dryRun) {
+                            DomResolver.getOrCreateParagraphStyle(
+                                doc,
+                                ps.name,
+                                styleProps,
+                                groupPath,
+                                ps.exportTagMap
+                            );
+                        }
+                        report.stylesCreated++;
+                        report.paragraphStylesCreated++;
+                        report.details.push(\`Configured paragraph style "\${ps.name}" in "\${groupPath}".\`);
+                    } catch (err) {
+                        if (options.failurePolicy === "strict") throw err;
+                        report.skippedCount++;
+                    }
+                }
+            }
+        }
+
+        // 5. Character Styles (Standard + Reverse)
+        if (options.applyCharacterStyles !== false && doc.characterStyles) {
+            const charGroups = [{ isRev: false, group: "Character" }];
+            if (options.createReverseStyles !== false) {
+                charGroups.push({ isRev: true, group: "Reverse / Character" });
+            }
+            for (const cGrp of charGroups) {
+                for (const cs of cStylesToInject) {
+                    currentStep++;
+                    this.reportProgress(options, \`Configuring character style "\${cs.name}"\${cGrp.isRev ? " (Reverse)" : ""}\`, currentStep, totalSteps);
+                    try {
+                        const styleProps = { ...(cs.properties || {}) };
+                        if (cGrp.isRev && cs.roleColor) {
+                            const revThemeColors = (typeof getThemeColors === "function") ? getThemeColors(theme, true) : themeColors;
+                            const swatchName = revThemeColors[cs.roleColor];
+                            if (swatchName === "Paper") {
+                                styleProps.fillColor = "Paper";
+                            } else if (swatchName && doc.colors) {
+                                const sw = doc.colors.itemByName(swatchName);
+                                if (sw && sw.isValid) styleProps.fillColor = sw;
+                            }
+                        }
+                        if (!options.dryRun) {
+                            DomResolver.getOrCreateCharacterStyle(
+                                doc,
+                                cs.name,
+                                styleProps,
+                                cGrp.group,
+                                cs.exportTagMap
+                            );
+                        }
+                        report.characterStylesCreated++;
+                        report.details.push(\`Configured character style "\${cs.name}" in "\${cGrp.group}".\`);
+                    } catch (err) {
+                        if (options.failurePolicy === "strict") throw err;
+                        report.skippedCount++;
+                    }
+                }
+            }
+        }
+
+        // 6. Cell Styles (5 styles)
+        if (options.applyCellStyles !== false && doc.cellStyles) {
+            for (const cell of cellStylesToInject) {
+                currentStep++;
+                this.reportProgress(options, \`Configuring cell style "\${cell.name}"\`, currentStep, totalSteps);
+                try {
+                    const cellProps = {};
+                    if (cell.role === "header" && doc.colors) {
+                        const hBg = doc.colors.itemByName(themeColors.tableHeaderBG);
+                        if (hBg && hBg.isValid) cellProps.fillColor = hBg;
+                    }
+                    if (!options.dryRun) {
+                        DomResolver.getOrCreateCellStyle(doc, cell.name, cellProps, "Tables");
+                    }
+                    report.cellStylesCreated++;
+                    report.details.push(\`Configured cell style "\${cell.name}".\`);
+                } catch (err) {
+                    if (options.failurePolicy === "strict") throw err;
+                    report.skippedCount++;
+                }
+            }
+        }
+
+        // 7. Table Styles (2 styles)
+        if (options.applyTableStyles !== false && doc.tableStyles) {
+            for (const tbl of tableStylesToInject) {
+                currentStep++;
+                this.reportProgress(options, \`Configuring table style "\${tbl.name}"\`, currentStep, totalSteps);
+                try {
+                    const tblProps = {};
+                    if (tbl.headerRegionCell && doc.cellStyles) {
+                        const hc = doc.cellStyles.itemByName(tbl.headerRegionCell);
+                        if (hc && hc.isValid) tblProps.headerRegionCellStyle = hc;
+                    }
+                    if (tbl.bodyRegionCell && doc.cellStyles) {
+                        const bc = doc.cellStyles.itemByName(tbl.bodyRegionCell);
+                        if (bc && bc.isValid) tblProps.bodyRegionCellStyle = bc;
+                    }
+                    if (!options.dryRun) {
+                        DomResolver.getOrCreateTableStyle(doc, tbl.name, tblProps, "Tables");
+                    }
+                    report.tableStylesCreated++;
+                    report.details.push(\`Configured table style "\${tbl.name}".\`);
+                } catch (err) {
+                    if (options.failurePolicy === "strict") throw err;
+                    report.skippedCount++;
+                }
+            }
+        }
+
+        // 8. Object Styles (24 styles: Frames - Radius Large, Frames - Radius Medium, Callouts, Cards)
+        if (options.applyObjectStyles !== false && doc.objectStyles) {
+            for (const objDef of objectStylesToInject) {
+                currentStep++;
+                this.reportProgress(options, \`Configuring object style "\${objDef.name}"\`, currentStep, totalSteps);
+                try {
+                    if (!options.dryRun) {
+                        let fillTarget = null;
+                        if (objDef.roleColor && themeColors[objDef.roleColor]) {
+                            const roleSwatch = themeColors[objDef.roleColor];
+                            fillTarget = (roleSwatch === "Paper") ? "Paper" : (doc.colors?.itemByName ? doc.colors.itemByName(roleSwatch) : null);
+                        } else if (objDef.fillColor && doc.colors) {
+                            fillTarget = doc.colors.itemByName(objDef.fillColor);
+                        }
+                        const styleProps = {
+                            ...(objDef.properties || {}),
+                            name: objDef.name
+                        };
+                        if (fillTarget) {
+                            styleProps.fillColor = fillTarget;
+                            styleProps.enableFill = true;
+                        }
+                        if (objDef.strokeColor && doc.colors) {
+                            const strokeColor = doc.colors.itemByName(objDef.strokeColor);
+                            if (strokeColor && strokeColor.isValid) styleProps.strokeColor = strokeColor;
+                        }
+                        if (objDef.strokeWeight !== undefined) styleProps.strokeWeight = objDef.strokeWeight;
+                        if (objDef.fillTint !== undefined) styleProps.fillTint = objDef.fillTint;
+                        if (objDef.insetSpacing) {
+                            styleProps.textFramePreferences = {
+                                insetSpacing: objDef.insetSpacing
+                            };
+                        }
+                        DomResolver.getOrCreateObjectStyle(doc, objDef.name, styleProps, objDef.group);
+                    }
+                    report.objectStylesCreated++;
+                    report.details.push(\`Configured object style "\${objDef.name}".\`);
+                } catch (err) {
+                    if (options.failurePolicy === "strict") throw err;
+                    report.skippedCount++;
+                }
+            }
+        }`;
+
+content = content.replace(/\/\/\s*4\.\s*Hierarchical Paragraph Styles[\s\S]*?(?=\s*return report;)/s, `${brandStylesFullPatch}\n\n        `);
+
+// Replace Layout Engine with updated layoutEngineBlock
+content = content.replace(/const PT_TO_MM = 0\.352778;[\s\S]*?(?=class QgdsResetService)/s, `${layoutEngineBlock}\n\n`);
 
 // Replace showNativePublishingDashboard and main
 content = content.replace(/function showNativePublishingDashboard\([\s\S]*?(?:main\(\);|\)\(\);)/s, `${comprehensiveDashboardAndMain}\nmain();`);
+
+// Encapsulate script in IIFE to protect persistent UXP script engine global scope
+if (!content.startsWith("(function () {")) {
+    content = `(function () {\n'use strict';\n${content.replace(/^'use strict';\s*/, "")}\n})();\n`;
+}
 
 fs.writeFileSync(targetPath, content, "utf8");
 console.log(`Successfully updated ${targetPath}! New size: ${fs.statSync(targetPath).size} bytes`);

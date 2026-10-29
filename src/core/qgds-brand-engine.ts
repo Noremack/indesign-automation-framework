@@ -1,6 +1,6 @@
 import { BaseService } from "./base-service";
 import { DomResolver } from "./dom-resolver";
-import { QGDS_BRAND_TOKENS } from "./qgds-tokens";
+import { QGDS_BRAND_TOKENS, DEFAULT_QGDS_OBJECT_STYLES } from "./qgds-tokens";
 import { BrandThemeAdapter } from "./theme-adapter";
 import { PhysicalTypographyEngine, TypographyRole } from "./typography-engine";
 import { BaseBatchOptions } from "./types";
@@ -186,6 +186,10 @@ export class QgdsBrandEngineService extends BaseService<BrandEngineOptions, Bran
       ? adapter.getTableStyles()
       : (QGDS_BRAND_TOKENS.styles?.table || []);
 
+    const objStyles = (adapter
+      ? adapter.getObjectStyles()
+      : (DEFAULT_QGDS_OBJECT_STYLES as unknown as any[])) || [];
+
     const totalSteps =
       (options.applyColors !== false ? colors.length : 0) +
       (options.applyGradients !== false ? gradients.length : 0) +
@@ -193,7 +197,8 @@ export class QgdsBrandEngineService extends BaseService<BrandEngineOptions, Bran
       (options.applyParagraphStyles !== false ? pStyles.length : 0) +
       (options.applyCharacterStyles !== false ? cStyles.length : 0) +
       (options.applyCellStyles !== false ? cellStyles.length : 0) +
-      (options.applyTableStyles !== false ? tableStyles.length : 0);
+      (options.applyTableStyles !== false ? tableStyles.length : 0) +
+      (options.applyObjectStyles !== false ? objStyles.length : 0);
 
     let currentStep = 0;
     const isCMYK = options.colorMode === "CMYK";
@@ -548,6 +553,46 @@ export class QgdsBrandEngineService extends BaseService<BrandEngineOptions, Bran
           }
           report.tableStylesCreated++;
           report.details.push(`Configured table style "${cleanTblName}".`);
+        } catch (err: any) {
+          if (options.failurePolicy === "strict") throw err;
+          report.skippedCount++;
+        }
+      }
+    }
+
+    // 8. Ingest Object Styles (Frames - Radius Large/Medium/Small, Callouts, Cards)
+    if (options.applyObjectStyles !== false && doc.objectStyles) {
+      const prefixRegex = new RegExp(`^\\s*(?:${namespacePrefix}\\s*[\\/\\\\]\\s*)+`, "i");
+
+      for (const objDef of objStyles) {
+        currentStep++;
+        this.reportProgress(options, `Configuring object style "${objDef.name}"`, currentStep, totalSteps);
+        try {
+          const cleanObjName = objDef.name.replace(prefixRegex, "").split(/\s*[\/\\]\s*/).pop()?.trim() || objDef.name;
+          const cleanedGroup = DomResolver.cleanGroupPath(objDef.group, namespacePrefix);
+          const rawObj = objDef as any;
+          const styleProps: any = { ...(rawObj.properties || {}) };
+
+          if (rawObj.roleColor) {
+            const swatchName = (themeColors as any)[rawObj.roleColor];
+            if (swatchName === "Paper") {
+              styleProps.fillColor = "Paper";
+            } else if (swatchName && doc.colors) {
+              const sw = doc.colors.itemByName(swatchName);
+              if (sw && sw.isValid) styleProps.fillColor = sw;
+            }
+          }
+
+          if (!options.dryRun) {
+            DomResolver.getOrCreateObjectStyle(
+              doc,
+              cleanObjName,
+              styleProps,
+              cleanedGroup
+            );
+          }
+          report.objectStylesCreated++;
+          report.details.push(`Configured object style "${cleanObjName}".`);
         } catch (err: any) {
           if (options.failurePolicy === "strict") throw err;
           report.skippedCount++;

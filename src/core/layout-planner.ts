@@ -8,6 +8,27 @@ export interface GeometryBoundsPt {
   right: number;
 }
 
+export interface MasterDecorationPlan {
+  name: string;
+  label: string;
+  layerName: string;
+  geometricBounds: [number, number, number, number]; // [top, left, bottom, right] in points
+  fillColorRole?: string;
+  strokeColorRole?: string;
+  strokeWeight?: number;
+  objectStyleName?: string;
+  objectStyleGroup?: string;
+  topLeftCornerOption?: number;
+  topRightCornerOption?: number;
+  bottomLeftCornerOption?: number;
+  bottomRightCornerOption?: number;
+  topLeftCornerRadius?: number;
+  topRightCornerRadius?: number;
+  bottomLeftCornerRadius?: number;
+  bottomRightCornerRadius?: number;
+  visible?: boolean;
+}
+
 export interface FolioPlan {
   geometricBounds: [number, number, number, number]; // [top, left, bottom, right] in points
   text: string;
@@ -15,6 +36,9 @@ export interface FolioPlan {
   label: string;
   name: string;
   layerName: string;
+  side?: "left" | "right" | "both";
+  justification?: number;
+  isAutoPageNumber?: boolean;
 }
 
 export interface MasterSpreadPlan {
@@ -22,10 +46,12 @@ export interface MasterSpreadPlan {
   baseName: string;
   fullName: string;
   isCover: boolean;
+  isSinglePage: boolean;
   marginsMm: { top: number; bottom: number; left: number; right: number };
   marginsPt: { top: number; bottom: number; left: number; right: number };
   gutterMm: number;
   folios: FolioPlan[];
+  decorations: MasterDecorationPlan[];
 }
 
 export interface PageRemapPlan {
@@ -170,25 +196,115 @@ export class LayoutPlanner {
     const marginPt = marginMm / this.PT_TO_MM;
 
     // 2. Compute Master Spread Plans
+    const brandLayer = params.layerNames?.brandAssets || "Brand Assets / Badges";
     const headerFooterLayer = params.layerNames?.headersFooters || "Headers & Footers";
+    const bleedPt = 3 / this.PT_TO_MM;
+    const isAboveA3 = Math.max(widthMm, heightMm) > 420;
 
     const masterPlans: MasterSpreadPlan[] = masterDefinitions.map(def => {
-      const isCover = def.name.toLowerCase().includes("cover");
-      const topM = isCover ? Math.round(marginMm * 1.5) : marginMm;
-      const botM = isCover ? Math.round(marginMm * 1.5) : marginMm;
+      const lowerName = def.name.toLowerCase();
+      const isCover = lowerName.includes("cover");
+      const isBack = lowerName.includes("back");
+      const isSinglePage = isCover || isBack;
+      const topM = (isCover && !isAboveA3) ? Math.round(marginMm * 1.5) : marginMm;
+      const botM = (isCover && !isAboveA3) ? Math.round(marginMm * 1.5) : marginMm;
 
+      const decorations: MasterDecorationPlan[] = [];
       const folios: FolioPlan[] = [];
+
+      if (isCover) {
+        // 1. Cover Header: Brand bar - Small
+        const scaledHeaderH = Math.max(25, (12 / this.PT_TO_MM) * scalingFactor);
+        decorations.push({
+          name: "Brand bar - Small",
+          label: "DynamicBrandHeader",
+          layerName: brandLayer,
+          geometricBounds: [-bleedPt, -bleedPt, scaledHeaderH, widthPt - marginPt],
+          fillColorRole: "themeGradient",
+          objectStyleName: "Medium - Rounded Bottom Right",
+          objectStyleGroup: "Frames - Radius Large",
+          bottomRightCornerOption: 1852797549, // ROUNDED_CORNER
+          bottomRightCornerRadius: 22.68 * scalingFactor,
+          visible: true
+        });
+
+        // 2. Cover Footer Banner
+        const scaledFooterH = Math.max(35, heightPt * 0.10);
+        decorations.push({
+          name: "Cover Footer Banner",
+          label: "DynamicBrandFooter",
+          layerName: brandLayer,
+          geometricBounds: [heightPt - scaledFooterH, -bleedPt, heightPt + bleedPt, widthPt + bleedPt],
+          fillColorRole: "themeGradient",
+          visible: true
+        });
+      } else if (isBack) {
+        // Back Cover Element: Back Cover Background
+        const scaledBackCoverH = Math.max(30, (19 / this.PT_TO_MM) * scalingFactor);
+        decorations.push({
+          name: "Back Cover Background",
+          label: "DynamicBrandBackCover",
+          layerName: brandLayer,
+          geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
+          fillColorRole: "themeGradient",
+          objectStyleName: "Medium - Rounded Top Left",
+          objectStyleGroup: "Frames - Radius Large",
+          topLeftCornerOption: 1852797549, // ROUNDED_CORNER
+          topLeftCornerRadius: 22.68 * scalingFactor,
+          visible: true
+        });
+      }
+
       if (def.injectFolio) {
+        const liveW = widthPt - 2 * marginPt;
         const footerY1 = heightPt - marginPt;
         const footerY2 = heightPt - Math.max(10, marginPt / 2);
+        const fontSize = Math.max(8, Math.round(9 * scalingFactor));
 
+        // Left Page running footer (Page Number on Left, Publication Title on Right)
         folios.push({
-          geometricBounds: [footerY1, marginPt, footerY2, widthPt - marginPt],
-          text: `${publicationTitle}  |  Page \u0018`, // InDesign auto page number marker
-          pointSize: Math.max(8, Math.round(9 * scalingFactor)),
+          geometricBounds: [footerY1, marginPt, footerY2, marginPt + liveW * 0.2],
+          text: "\u0018", // SpecialCharacters.AUTO_PAGE_NUMBER
+          pointSize: fontSize,
           label: "DynamicContentFooter",
-          name: "Running Folio",
-          layerName: headerFooterLayer
+          name: "Content Footer - Page Number (Left)",
+          layerName: headerFooterLayer,
+          side: "left",
+          justification: 1818584692, // Justification.LEFT_ALIGN
+          isAutoPageNumber: true
+        });
+        folios.push({
+          geometricBounds: [footerY1, marginPt + liveW * 0.25, footerY2, widthPt - marginPt],
+          text: publicationTitle,
+          pointSize: fontSize,
+          label: "DynamicContentFooter",
+          name: "Content Footer - Document Title (Left)",
+          layerName: headerFooterLayer,
+          side: "left",
+          justification: 1919379572 // Justification.RIGHT_ALIGN
+        });
+
+        // Right Page running footer (Publication Title on Left, Page Number on Right)
+        folios.push({
+          geometricBounds: [footerY1, marginPt, footerY2, widthPt - marginPt - liveW * 0.25],
+          text: publicationTitle,
+          pointSize: fontSize,
+          label: "DynamicContentFooter",
+          name: "Content Footer - Document Title (Right)",
+          layerName: headerFooterLayer,
+          side: "right",
+          justification: 1818584692 // Justification.LEFT_ALIGN
+        });
+        folios.push({
+          geometricBounds: [footerY1, widthPt - marginPt - liveW * 0.2, footerY2, widthPt - marginPt],
+          text: "\u0018",
+          pointSize: fontSize,
+          label: "DynamicContentFooter",
+          name: "Content Footer - Page Number (Right)",
+          layerName: headerFooterLayer,
+          side: "right",
+          justification: 1919379572, // Justification.RIGHT_ALIGN
+          isAutoPageNumber: true
         });
       }
 
@@ -197,6 +313,7 @@ export class LayoutPlanner {
         baseName: def.name,
         fullName: `${def.prefix}-${def.name}`,
         isCover,
+        isSinglePage,
         marginsMm: { top: topM, bottom: botM, left: marginMm, right: marginMm },
         marginsPt: {
           top: topM / this.PT_TO_MM,
@@ -205,7 +322,8 @@ export class LayoutPlanner {
           right: marginPt
         },
         gutterMm,
-        folios
+        folios,
+        decorations
       };
     });
 

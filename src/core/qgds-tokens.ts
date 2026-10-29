@@ -2619,3 +2619,292 @@ export const QGDS_BRAND_TOKENS = {
     ]
   }
 } as const;
+
+export const DEFAULT_QGDS_OBJECT_STYLES = [
+  // 1. Frames - Radius Large (8mm)
+  {
+    name: "Medium - Rounded Bottom Right",
+    group: "Frames - Radius Large",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      bottomRightCornerOption: 1852797549, // ROUNDED_CORNER
+      bottomRightCornerRadius: 22.68 // ~8mm in points
+    }
+  },
+  {
+    name: "Medium - Rounded Top Left",
+    group: "Frames - Radius Large",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Medium - Rounded All Corners",
+    group: "Frames - Radius Large",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68,
+      topRightCornerRadius: 22.68,
+      bottomLeftCornerRadius: 22.68,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "White - Rounded Bottom Right",
+    group: "Frames - Radius Large",
+    roleColor: "themeWhiteColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      bottomRightCornerOption: 1852797549,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "White - Rounded Top Left",
+    group: "Frames - Radius Large",
+    roleColor: "themeWhiteColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68
+    }
+  },
+  {
+    name: "White - Rounded All Corners",
+    group: "Frames - Radius Large",
+    roleColor: "themeWhiteColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68,
+      topRightCornerRadius: 22.68,
+      bottomLeftCornerRadius: 22.68,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Dark - Rounded Bottom Right",
+    group: "Frames - Radius Large",
+    roleColor: "secondaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      bottomRightCornerOption: 1852797549,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Dark - Rounded Top Left",
+    group: "Frames - Radius Large",
+    roleColor: "secondaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Dark - Rounded All Corners",
+    group: "Frames - Radius Large",
+    roleColor: "secondaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68,
+      topRightCornerRadius: 22.68,
+      bottomLeftCornerRadius: 22.68,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Extra Dark - Rounded Bottom Right",
+    group: "Frames - Radius Large",
+    roleColor: "themeExtraDarkColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      bottomRightCornerOption: 1852797549,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Extra Dark - Rounded Top Left",
+    group: "Frames - Radius Large",
+    roleColor: "themeExtraDarkColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68
+    }
+  },
+  {
+    name: "Extra Dark - Rounded All Corners",
+    group: "Frames - Radius Large",
+    roleColor: "themeExtraDarkColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 22.68,
+      topRightCornerRadius: 22.68,
+      bottomLeftCornerRadius: 22.68,
+      bottomRightCornerRadius: 22.68
+    }
+  },
+  // 2. Frames - Radius Medium (4mm)
+  {
+    name: "Medium - Rounded Bottom Right",
+    group: "Frames - Radius Medium",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      bottomRightCornerOption: 1852797549,
+      bottomRightCornerRadius: 11.34
+    }
+  },
+  {
+    name: "Medium - Rounded Top Left",
+    group: "Frames - Radius Medium",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topLeftCornerRadius: 11.34
+    }
+  },
+  {
+    name: "Medium - Rounded All Corners",
+    group: "Frames - Radius Medium",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 11.34,
+      topRightCornerRadius: 11.34,
+      bottomLeftCornerRadius: 11.34,
+      bottomRightCornerRadius: 11.34
+    }
+  },
+  // 3. Frames - Radius Small (2mm)
+  {
+    name: "Medium - Rounded All Corners",
+    group: "Frames - Radius Small",
+    roleColor: "primaryHeadingColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: false,
+      strokeWeight: 0,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 5.67,
+      topRightCornerRadius: 5.67,
+      bottomLeftCornerRadius: 5.67,
+      bottomRightCornerRadius: 5.67
+    }
+  },
+  // 4. Callouts & Cards
+  {
+    name: "Callout - Info",
+    group: "Callouts",
+    roleColor: "frameFillColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: true,
+      strokeWeight: 1.5,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 5.67,
+      topRightCornerRadius: 5.67,
+      bottomLeftCornerRadius: 5.67,
+      bottomRightCornerRadius: 5.67
+    }
+  },
+  {
+    name: "Callout - Warning",
+    group: "Callouts",
+    roleColor: "accentColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: true,
+      strokeWeight: 1.5,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 5.67,
+      topRightCornerRadius: 5.67,
+      bottomLeftCornerRadius: 5.67,
+      bottomRightCornerRadius: 5.67
+    }
+  },
+  {
+    name: "Card Container",
+    group: "Cards",
+    roleColor: "themeWhiteColor" as const,
+    properties: {
+      enableFill: true,
+      enableStroke: true,
+      strokeWeight: 0.5,
+      topLeftCornerOption: 1852797549,
+      topRightCornerOption: 1852797549,
+      bottomLeftCornerOption: 1852797549,
+      bottomRightCornerOption: 1852797549,
+      topLeftCornerRadius: 11.34,
+      topRightCornerRadius: 11.34,
+      bottomLeftCornerRadius: 11.34,
+      bottomRightCornerRadius: 11.34
+    }
+  }
+];

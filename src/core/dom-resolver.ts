@@ -158,11 +158,18 @@ export class DomResolver {
 
     let style = targetCollection.itemByName(name);
     if (!style || !style.isValid) {
-      style = this.getParagraphStyleSafely(doc, name);
+      try {
+        style = targetCollection.add({ name });
+      } catch (_) {
+        try {
+          style = targetCollection.add();
+          style.name = name;
+        } catch (_) {
+          style = this.getParagraphStyleSafely(doc, name);
+        }
+      }
     }
-    if (!style || !style.isValid) {
-      style = targetCollection.add({ name, ...props });
-    } else if (props && Object.keys(props).length > 0) {
+    if (style && style.isValid && props && Object.keys(props).length > 0) {
       try {
         for (const [k, v] of Object.entries(props)) {
           try { (style as any)[k] = v; } catch (_) {}
@@ -202,11 +209,18 @@ export class DomResolver {
 
     let style = targetCollection.itemByName(name);
     if (!style || !style.isValid) {
-      style = this.getCharacterStyleSafely(doc, name);
+      try {
+        style = targetCollection.add({ name });
+      } catch (_) {
+        try {
+          style = targetCollection.add();
+          style.name = name;
+        } catch (_) {
+          style = this.getCharacterStyleSafely(doc, name);
+        }
+      }
     }
-    if (!style || !style.isValid) {
-      style = targetCollection.add({ name, ...props });
-    } else if (props && Object.keys(props).length > 0) {
+    if (style && style.isValid && props && Object.keys(props).length > 0) {
       try {
         for (const [k, v] of Object.entries(props)) {
           try { (style as any)[k] = v; } catch (_) {}
@@ -245,11 +259,18 @@ export class DomResolver {
 
     let style = targetCollection.itemByName(name);
     if (!style || !style.isValid) {
-      style = this.getCellStyleSafely(doc, name);
+      try {
+        style = targetCollection.add({ name });
+      } catch (_) {
+        try {
+          style = targetCollection.add();
+          style.name = name;
+        } catch (_) {
+          style = this.getCellStyleSafely(doc, name);
+        }
+      }
     }
-    if (!style || !style.isValid) {
-      style = targetCollection.add({ name, ...props });
-    } else if (props && Object.keys(props).length > 0) {
+    if (style && style.isValid && props && Object.keys(props).length > 0) {
       try {
         for (const [k, v] of Object.entries(props)) {
           try { (style as any)[k] = v; } catch (_) {}
@@ -278,11 +299,18 @@ export class DomResolver {
 
     let style = targetCollection.itemByName(name);
     if (!style || !style.isValid) {
-      style = this.getTableStyleSafely(doc, name);
+      try {
+        style = targetCollection.add({ name });
+      } catch (_) {
+        try {
+          style = targetCollection.add();
+          style.name = name;
+        } catch (_) {
+          style = this.getTableStyleSafely(doc, name);
+        }
+      }
     }
-    if (!style || !style.isValid) {
-      style = targetCollection.add({ name, ...props });
-    } else if (props && Object.keys(props).length > 0) {
+    if (style && style.isValid && props && Object.keys(props).length > 0) {
       try {
         for (const [k, v] of Object.entries(props)) {
           try { (style as any)[k] = v; } catch (_) {}
@@ -311,11 +339,18 @@ export class DomResolver {
 
     let style = targetCollection.itemByName(name);
     if (!style || !style.isValid) {
-      style = this.getObjectStyleSafely(doc, name);
+      try {
+        style = targetCollection.add({ name });
+      } catch (_) {
+        try {
+          style = targetCollection.add();
+          style.name = name;
+        } catch (_) {
+          style = this.getObjectStyleSafely(doc, name);
+        }
+      }
     }
-    if (!style || !style.isValid) {
-      style = targetCollection.add({ name, ...props });
-    } else if (props && Object.keys(props).length > 0) {
+    if (style && style.isValid && props && Object.keys(props).length > 0) {
       try {
         for (const [k, v] of Object.entries(props)) {
           try { (style as any)[k] = v; } catch (_) {}

@@ -29,6 +29,7 @@ export interface LayoutEngineOptions extends BaseBatchOptions {
   enforceMargins?: boolean;
   remapBodyPages?: boolean;
   injectFooters?: boolean;
+  injectDecorations?: boolean;
   publicationTitle?: string;
 }
 
@@ -195,17 +196,20 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
     if (options.createMasters !== false && doc.masterSpreads) {
       try {
+        const adoptedMasterIds = new Set<any>();
+
         for (const mPlan of plan.masterPlans) {
           let foundMaster: any = null;
           const currentMasters = doc.masterSpreads.everyItem
             ? doc.masterSpreads.everyItem().getElements()
             : [];
 
-          // Exact match
+          // 1. Exact match (fullName or prefix + baseName)
           for (let m = 0; m < currentMasters.length; m++) {
             const cm = currentMasters[m];
             if (
               cm.isValid &&
+              !adoptedMasterIds.has(cm.id || cm) &&
               (cm.name === mPlan.fullName ||
                 (cm.namePrefix === mPlan.prefix && cm.baseName === mPlan.baseName))
             ) {
@@ -214,11 +218,63 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             }
           }
 
-          // Adopt matching prefix
+          // 2. Fuzzy search by role substring (e.g. "cover", "content", "back")
+          if (!foundMaster) {
+            const searchStr = mPlan.baseName.toLowerCase();
+            for (let m = 0; m < currentMasters.length; m++) {
+              const cm = currentMasters[m];
+              if (
+                cm.isValid &&
+                !adoptedMasterIds.has(cm.id || cm) &&
+                cm.name &&
+                cm.name.toLowerCase().includes(searchStr)
+              ) {
+                try {
+                  if (!options.dryRun) {
+                    cm.namePrefix = mPlan.prefix;
+                    cm.baseName = mPlan.baseName;
+                  }
+                  foundMaster = cm;
+                  report.mastersCreated.push(mPlan.fullName);
+                  break;
+                } catch (_) {}
+              }
+            }
+          }
+
+          // 3. Match known host aliases (e.g. "A-Parent", "A-Master", "B-Parent", etc.)
+          if (!foundMaster) {
+            const aliases: string[] = [];
+            if (mPlan.prefix === "A") aliases.push("a-master", "a-parent", "master a", "parent a");
+            else if (mPlan.prefix === "B") aliases.push("b-master", "b-parent", "master b", "parent b");
+            else if (mPlan.prefix === "C") aliases.push("c-master", "c-parent", "master c", "parent c");
+
+            for (let m = 0; m < currentMasters.length; m++) {
+              const cm = currentMasters[m];
+              if (
+                cm.isValid &&
+                !adoptedMasterIds.has(cm.id || cm) &&
+                cm.name &&
+                aliases.includes(cm.name.toLowerCase().trim())
+              ) {
+                try {
+                  if (!options.dryRun) {
+                    cm.namePrefix = mPlan.prefix;
+                    cm.baseName = mPlan.baseName;
+                  }
+                  foundMaster = cm;
+                  report.mastersCreated.push(mPlan.fullName);
+                  break;
+                } catch (_) {}
+              }
+            }
+          }
+
+          // 4. Adopt matching prefix
           if (!foundMaster) {
             for (let m = 0; m < currentMasters.length; m++) {
               const cm = currentMasters[m];
-              if (cm.isValid && cm.namePrefix === mPlan.prefix) {
+              if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.namePrefix === mPlan.prefix) {
                 try {
                   if (!options.dryRun) {
                     cm.baseName = mPlan.baseName;
@@ -231,7 +287,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             }
           }
 
-          // Create new master
+          // 5. Create new master spread if not adopted
           if (!foundMaster && !options.dryRun) {
             try {
               const newM = doc.masterSpreads.add();
@@ -242,41 +298,80 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             } catch (_) {}
           }
 
-          // Purge existing items on master pages if cleanMasters is enabled
-          if (
-            foundMaster &&
-            foundMaster.isValid &&
-            options.cleanMasters !== false &&
-            !options.dryRun
-          ) {
-            const mPages = foundMaster.pages
-              ? foundMaster.pages.everyItem
-                ? foundMaster.pages.everyItem().getElements()
-                : foundMaster.pages
-              : [];
-            for (let p = 0; p < mPages.length; p++) {
-              const mp = mPages[p];
-              if (!mp || !mp.isValid) continue;
-              const pItems = mp.pageItems
-                ? mp.pageItems.everyItem
-                  ? mp.pageItems.everyItem().getElements()
-                  : mp.pageItems
+          if (foundMaster && foundMaster.isValid) {
+            adoptedMasterIds.add(foundMaster.id || foundMaster);
+
+            // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK
+            if (mPlan.isSinglePage && !options.dryRun && foundMaster.pages) {
+              try {
+                const mPages = foundMaster.pages.everyItem
+                  ? foundMaster.pages.everyItem().getElements()
+                  : foundMaster.pages;
+                while (mPages.length > 1) {
+                  const pToRemove = mPages.pop();
+                  if (pToRemove && pToRemove.isValid) {
+                    try { pToRemove.remove(); } catch (_) {}
+                  }
+                }
+              } catch (_) {}
+            }
+
+            // Purge existing items on master pages if cleanMasters is enabled
+            if (
+              options.cleanMasters !== false &&
+              !options.dryRun
+            ) {
+              const mPages = foundMaster.pages
+                ? foundMaster.pages.everyItem
+                  ? foundMaster.pages.everyItem().getElements()
+                  : foundMaster.pages
                 : [];
-              for (let pi = pItems.length - 1; pi >= 0; pi--) {
-                const item = pItems[pi];
-                if (item && item.isValid) {
-                  try {
-                    if (item.itemLayer && item.itemLayer.isValid && item.itemLayer.locked)
-                      item.itemLayer.locked = false;
-                    if (item.locked) item.locked = false;
-                    item.remove();
-                  } catch (_) {}
+              for (let p = 0; p < mPages.length; p++) {
+                const mp = mPages[p];
+                if (!mp || !mp.isValid) continue;
+                const pItems = mp.pageItems
+                  ? mp.pageItems.everyItem
+                    ? mp.pageItems.everyItem().getElements()
+                    : mp.pageItems
+                  : [];
+                for (let pi = pItems.length - 1; pi >= 0; pi--) {
+                  const item = pItems[pi];
+                  if (item && item.isValid) {
+                    try {
+                      if (item.itemLayer && item.itemLayer.isValid && item.itemLayer.locked)
+                        item.itemLayer.locked = false;
+                      if (item.locked) item.locked = false;
+                      item.remove();
+                    } catch (_) {}
+                  }
                 }
               }
             }
           }
 
           masterSpreadsMap[mPlan.prefix] = foundMaster;
+        }
+
+        // Cleanup: remove unused empty default "A-Master" or "A-Parent"
+        if (!options.dryRun) {
+          const currentMasters = doc.masterSpreads.everyItem
+            ? doc.masterSpreads.everyItem().getElements()
+            : [];
+          for (let m = currentMasters.length - 1; m >= 0; m--) {
+            const cm = currentMasters[m];
+            if (
+              cm.isValid &&
+              !adoptedMasterIds.has(cm.id || cm) &&
+              (cm.name === "A-Master" || cm.name === "A-Parent")
+            ) {
+              const items = cm.pageItems
+                ? cm.pageItems.everyItem ? cm.pageItems.everyItem().getElements() : cm.pageItems
+                : [];
+              if (items.length === 0) {
+                try { cm.remove(); } catch (_) {}
+              }
+            }
+          }
         }
 
         report.details.push(
@@ -373,66 +468,185 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
       }
     }
 
-    // 7. Inject Folios from Plan
-    if (options.injectFooters !== false && !options.dryRun) {
+    // 7. Inject Brand Decorations & Folios from Plan
+    if (!options.dryRun) {
       try {
+        const themeName = options.adapter?.defaultTheme || "Blue";
+        const gradientName = `${themeName} - Gradient`;
+        const themeGrad = doc.gradients?.itemByName ? doc.gradients.itemByName(gradientName) : null;
+        const themeColor = doc.colors?.itemByName
+          ? (doc.colors.itemByName(`${themeName} - Medium`)?.isValid
+              ? doc.colors.itemByName(`${themeName} - Medium`)
+              : doc.colors.itemByName(`${themeName} - Dark`))
+          : null;
+        const fillTarget = (themeGrad && themeGrad.isValid)
+          ? themeGrad
+          : ((themeColor && themeColor.isValid) ? themeColor : null);
+
         for (const mPlan of plan.masterPlans) {
-          if (!mPlan.folios || mPlan.folios.length === 0) continue;
           const ms = masterSpreadsMap[mPlan.prefix];
           if (!ms || !ms.isValid || !ms.pages) continue;
 
           const mPages = ms.pages.everyItem ? ms.pages.everyItem().getElements() : [];
-          for (let pIdx = 0; pIdx < mPages.length; pIdx++) {
-            const pageEl = mPages[pIdx];
-            if (!pageEl || !pageEl.isValid || !pageEl.textFrames) continue;
 
-            for (const folio of mPlan.folios) {
-              // Locate or create folio layer
-              let fLayer = doc.layers?.itemByName(folio.layerName);
-              if (!fLayer || !fLayer.isValid) {
-                fLayer = doc.layers ? doc.layers[0] : null;
-              }
+          // 7a. Inject Master Brand Decorations (Brand bars, Cover footer banner, Back cover background)
+          if (options.injectDecorations !== false && mPlan.decorations && mPlan.decorations.length > 0) {
+            for (let pIdx = 0; pIdx < mPages.length; pIdx++) {
+              const pageEl = mPages[pIdx];
+              if (!pageEl || !pageEl.isValid || !pageEl.rectangles) continue;
 
-              // Purge existing folio frames to avoid duplicates
-              if (pageEl.textFrames.everyItem) {
-                const tfs = pageEl.textFrames.everyItem().getElements();
-                for (let ti = tfs.length - 1; ti >= 0; ti--) {
-                  if (
-                    tfs[ti].label === folio.label ||
-                    tfs[ti].label === "DynamicContentFooter" ||
-                    tfs[ti].label === "DynamicBrandFooter" ||
-                    tfs[ti].name === folio.name ||
-                    tfs[ti].name === "DynamicBrandFooter"
-                  ) {
-                    try {
-                      tfs[ti].remove();
-                    } catch (_) {}
+              for (const deco of mPlan.decorations) {
+                let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(deco.layerName) : null;
+                if (!dLayer || !dLayer.isValid) {
+                  dLayer = doc.layers ? doc.layers[0] : null;
+                }
+
+                // Purge existing decoration rectangles with same label/name
+                if (pageEl.rectangles.everyItem) {
+                  const rects = pageEl.rectangles.everyItem().getElements();
+                  for (let ri = rects.length - 1; ri >= 0; ri--) {
+                    if (
+                      rects[ri].label === deco.label ||
+                      rects[ri].name === deco.name
+                    ) {
+                      try { rects[ri].remove(); } catch (_) {}
+                    }
                   }
                 }
+
+                try {
+                  const rect = pageEl.rectangles.add({
+                    label: deco.label,
+                    name: deco.name,
+                    geometricBounds: deco.geometricBounds,
+                    itemLayer: dLayer
+                  });
+
+                  if (rect && rect.isValid) {
+                    rect.strokeWeight = deco.strokeWeight || 0;
+                    if (fillTarget) {
+                      rect.fillColor = fillTarget;
+                    }
+                    if (doc.swatches) {
+                      const swatchNone = doc.swatches.item("None")?.isValid
+                        ? doc.swatches.item("None")
+                        : doc.swatches.item("[None]");
+                      if (swatchNone && swatchNone.isValid) rect.strokeColor = swatchNone;
+                    }
+
+                    if (deco.bottomRightCornerOption && rect.bottomRightCornerOption !== undefined) {
+                      rect.bottomRightCornerOption = deco.bottomRightCornerOption;
+                      if (deco.bottomRightCornerRadius) rect.bottomRightCornerRadius = deco.bottomRightCornerRadius;
+                    }
+                    if (deco.topLeftCornerOption && rect.topLeftCornerOption !== undefined) {
+                      rect.topLeftCornerOption = deco.topLeftCornerOption;
+                      if (deco.topLeftCornerRadius) rect.topLeftCornerRadius = deco.topLeftCornerRadius;
+                    }
+
+                    if (deco.objectStyleName) {
+                      const objStyle = DomResolver.getObjectStyleSafely(doc, deco.objectStyleName, deco.objectStyleGroup);
+                      if (objStyle && objStyle.isValid) {
+                        try { rect.appliedObjectStyle = objStyle; } catch (_) {}
+                      }
+                    }
+                  }
+                } catch (_) {}
               }
+            }
+          }
 
-              const tfFolio = pageEl.textFrames.add({
-                label: folio.label,
-                name: folio.name,
-                geometricBounds: folio.geometricBounds,
-                itemLayer: fLayer
-              });
+          // 7b. Inject Running Folios (B-Content left & right pages)
+          if (options.injectFooters !== false && mPlan.folios && mPlan.folios.length > 0) {
+            const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers");
+            const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character");
 
-              try {
-                tfFolio.contents = folio.text;
-              } catch (_) {}
+            for (let pIdx = 0; pIdx < mPages.length; pIdx++) {
+              const pageEl = mPages[pIdx];
+              if (!pageEl || !pageEl.isValid || !pageEl.textFrames) continue;
 
-              try {
-                if (tfFolio.paragraphs && tfFolio.paragraphs[0]) {
-                  tfFolio.paragraphs[0].pointSize = folio.pointSize;
+              const isLeftPage = pIdx === 0 && mPages.length > 1;
+
+              for (const folio of mPlan.folios) {
+                // Filter by side if spread
+                if (mPages.length > 1) {
+                  if (isLeftPage && folio.side === "right") continue;
+                  if (!isLeftPage && folio.side === "left") continue;
                 }
-              } catch (_) {}
 
-              report.footersInjected++;
+                // Locate or create folio layer
+                let fLayer = doc.layers?.itemByName ? doc.layers.itemByName(folio.layerName) : null;
+                if (!fLayer || !fLayer.isValid) {
+                  fLayer = doc.layers ? doc.layers[0] : null;
+                }
+
+                // Purge existing folio frames to avoid duplicates
+                if (pageEl.textFrames.everyItem) {
+                  const tfs = pageEl.textFrames.everyItem().getElements();
+                  for (let ti = tfs.length - 1; ti >= 0; ti--) {
+                    if (
+                      tfs[ti].label === folio.label ||
+                      tfs[ti].label === "DynamicContentFooter" ||
+                      tfs[ti].name === folio.name
+                    ) {
+                      try {
+                        tfs[ti].remove();
+                      } catch (_) {}
+                    }
+                  }
+                }
+
+                try {
+                  const tfFolio = pageEl.textFrames.add({
+                    label: folio.label,
+                    name: folio.name,
+                    geometricBounds: folio.geometricBounds,
+                    itemLayer: fLayer
+                  });
+
+                  if (tfFolio && tfFolio.isValid) {
+                    tfFolio.strokeWeight = 0;
+                    if (doc.swatches) {
+                      const swatchNone = doc.swatches.item("None")?.isValid
+                        ? doc.swatches.item("None")
+                        : doc.swatches.item("[None]");
+                      if (swatchNone && swatchNone.isValid) {
+                        tfFolio.fillColor = swatchNone;
+                        tfFolio.strokeColor = swatchNone;
+                      }
+                    }
+
+                    if (tfFolio.textFramePreferences) {
+                      try { tfFolio.textFramePreferences.verticalJustification = 1651471469; } catch (_) {}
+                    }
+
+                    try { tfFolio.contents = folio.text; } catch (_) {}
+
+                    if (tfFolio.texts && tfFolio.texts.length > 0) {
+                      if (footerStyle && footerStyle.isValid) {
+                        try { tfFolio.texts[0].appliedParagraphStyle = footerStyle; } catch (_) {}
+                      }
+                      if (folio.justification && tfFolio.texts[0].justification !== undefined) {
+                        try { tfFolio.texts[0].justification = folio.justification; } catch (_) {}
+                      }
+                      if (folio.isAutoPageNumber && boldStyle && boldStyle.isValid) {
+                        try { tfFolio.texts[0].appliedCharacterStyle = boldStyle; } catch (_) {}
+                      }
+                    }
+
+                    try {
+                      if (tfFolio.paragraphs && tfFolio.paragraphs[0]) {
+                        tfFolio.paragraphs[0].pointSize = folio.pointSize;
+                      }
+                    } catch (_) {}
+
+                    report.footersInjected++;
+                  }
+                } catch (_) {}
+              }
             }
           }
         }
-        report.details.push(`Injected folios from layout plan.`);
+        report.details.push(`Injected master brand elements and running folios from layout plan.`);
       } catch (err: any) {
         if (options.failurePolicy === "strict") throw err;
         report.skippedCount++;

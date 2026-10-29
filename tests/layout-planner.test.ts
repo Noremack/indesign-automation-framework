@@ -124,9 +124,10 @@ describe("LayoutPlanner (Pure Mathematical Geometry & Decoupling)", () => {
     expect(contentMaster).toBeDefined();
     expect(contentMaster?.isCover).toBe(false);
     expect(contentMaster?.marginsMm.top).toBe(12);
-    expect(contentMaster?.folios.length).toBe(1);
+    expect(contentMaster?.folios.length).toBeGreaterThanOrEqual(1);
 
-    const folio = contentMaster?.folios[0]!;
+    const folio = contentMaster?.folios.find(f => f.text.includes("Strategic Roadmap 2026"))!;
+    expect(folio).toBeDefined();
     expect(folio.text).toContain("Strategic Roadmap 2026");
     expect(folio.geometricBounds[0]).toBeGreaterThan(0); // top
     expect(folio.geometricBounds[1]).toBeGreaterThan(0); // left
