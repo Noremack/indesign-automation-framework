@@ -79,4 +79,78 @@ describe("DomResolver", () => {
     expect(resolved).toBeDefined();
     expect(resolved.name).toBe("BoldAccent");
   });
+
+  it("creates and retrieves gradients with gradient stops", () => {
+    const doc = new MockDocument();
+
+    const grad = DomResolver.getOrCreateGradient(doc, "Blue - Gradient", "Linear", [
+      { color: "Black", location: 0 },
+      { color: "Registration", location: 100 }
+    ]);
+
+    expect(grad).toBeDefined();
+    expect(grad.name).toBe("Blue - Gradient");
+    expect(doc.gradients.length).toBe(1);
+
+    // Retrieving existing returns same instance
+    const existing = DomResolver.getOrCreateGradient(doc, "Blue - Gradient");
+    expect(existing.name).toBe("Blue - Gradient");
+    expect(doc.gradients.length).toBe(1);
+  });
+
+  it("resolves and creates nested style groups", () => {
+    const doc = new MockDocument();
+
+    const group = DomResolver.resolveTargetGroup(
+      doc.paragraphStyleGroups,
+      "QGDS / Headings / SubLevel",
+      "paragraphStyleGroups"
+    );
+
+    expect(group).toBeDefined();
+    expect(group.name).toBe("SubLevel");
+  });
+
+  it("creates hierarchical paragraph styles, character styles, table styles, and cell styles", () => {
+    const doc = new MockDocument();
+
+    const pStyle = DomResolver.getOrCreateParagraphStyle(
+      doc,
+      "QGDS Title",
+      { pointSize: 28 },
+      "QGDS / Headings",
+      { exportTag: "h1", exportClass: "qld__title" }
+    );
+    expect(pStyle).toBeDefined();
+    expect(pStyle.name).toBe("QGDS Title");
+    expect(pStyle.pointSize).toBe(28);
+
+    const cStyle = DomResolver.getOrCreateCharacterStyle(
+      doc,
+      "Accent Bold",
+      { fontStyle: "Bold" },
+      "QGDS / Inline",
+      { exportTag: "strong" }
+    );
+    expect(cStyle).toBeDefined();
+    expect(cStyle.name).toBe("Accent Bold");
+
+    const cellStyle = DomResolver.getOrCreateCellStyle(
+      doc,
+      "Cell - Header",
+      {},
+      "QGDS / Tables"
+    );
+    expect(cellStyle).toBeDefined();
+    expect(cellStyle.name).toBe("Cell - Header");
+
+    const tableStyle = DomResolver.getOrCreateTableStyle(
+      doc,
+      "Table - Clean",
+      {},
+      "QGDS / Tables"
+    );
+    expect(tableStyle).toBeDefined();
+    expect(tableStyle.name).toBe("Table - Clean");
+  });
 });
