@@ -812,8 +812,8 @@ class PhysicalTypographyEngine {
 }
 `;
 
-// Replace DomResolver
-content = content.replace(/class DomResolver\s*\{[\s\S]*?static findStyleInGroups[\s\S]*?return null;\s*\}\s*\}/s, `${fullDomResolver}\n${adapterAndPlannerBlock}`);
+// Replace DomResolver and all injected adapters/planners idempotently
+content = content.replace(/class DomResolver\s*\{[\s\S]*?(?=const DEFAULT_QGDS_PAGE_MATRIX\s*=)/s, `${fullDomResolver}\n${adapterAndPlannerBlock}\n\n`);
 
 // --- Theme Colors Resolution ---
 const themeColorsBlock = `
@@ -2281,7 +2281,7 @@ const swatchPatch = `        const isCMYK = options.colorMode === "CMYK";
             }
         }`;
 
-content = content.replace(/\/\/\s*1\.\s*Swatches Ingestion[\s\S]*?(?=\/\/\s*2\.\s*Gradients Ingestion)/s, `${swatchPatch}\n\n        `);
+content = content.replace(/(?:\s*const isCMYK = options\.colorMode === "CMYK";[\s\S]*?)*\/\/\s*1\.\s*Swatches Ingestion[\s\S]*?(?=\/\/\s*2\.\s*Gradients Ingestion)/s, `${swatchPatch}\n\n        `);
 
 // 2b. Remap Previous Theme Gradients
 const gradientRemapPatch = `        // 2b. Remap Previous Theme Gradients
@@ -2316,7 +2316,7 @@ content = content.replace(/"QGDS \/ Tables"/g, '"Tables"');
 
 // Replace arbitrary pointSize and leading with PhysicalTypographyEngine rules
 content = content.replace(
-    /const styleProps = \{ \.\.\.\(ps\.properties \|\| \{\}\) \};\s*if \(typeof styleProps\.pointSize === "number"\) \{[\s\S]*?styleProps\.leading = Math\.round\(styleProps\.leading \* scale\);\s*\}/s,
+    /const styleProps = \{ \.\.\.\(ps\.properties \|\| \{\}\) \};\s*(?:if \(typeof styleProps\.pointSize === "number"\) \{[\s\S]*?styleProps\.leading = Math\.round\(styleProps\.leading \* scale\);\s*\}|const role = ps\.scaleRole[\s\S]*?opticalTrackingOffset: 0\s*\}\);)/s,
     `const styleProps = { ...(ps.properties || {}) };
                     const role = ps.scaleRole || PhysicalTypographyEngine.detectTypographyRole(ps.name, groupPath);
                     PhysicalTypographyEngine.applyPhysicalTypographyRules(styleProps, role, {
