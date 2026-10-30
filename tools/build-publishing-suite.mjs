@@ -1113,21 +1113,60 @@ class QgdsLayoutEngineService extends BaseService {
             details: []
         };
 
-        // 1. Layer Stratification
+        // 1. Layer Stratification (Enforce official 3-layer architecture and clean legacy layers)
         if (options.enforceStratification !== false && doc.layers) {
             try {
-                const requiredLayers = [
-                    { name: "Artwork / Content", color: 1768846950 },
-                    { name: "Headers & Footers", color: 1684366699 },
-                    { name: "Brand Assets / Badges", color: 1836016741 }
+                const layerDefs = [
+                    { name: "Foreground", aliases: ["Foreground", "Layer 1", "Artwork / Content", "Content"] },
+                    { name: "Master: expand for cover options", aliases: ["Master: expand for cover options", "Brand Assets / Badges", "Headers & Footers", "Cover Options"] },
+                    { name: "Background", aliases: ["Background", "Layer 2"] }
                 ];
-                for (let i = 0; i < requiredLayers.length; i++) {
-                    const l = DomResolver.getOrCreateLayer(doc, requiredLayers[i].name);
-                    if (l && l.isValid) {
-                        try {
-                            l.locked = false;
-                            l.visible = true;
-                        } catch (_) {}
+                const docLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : [];
+                for (let i = layerDefs.length - 1; i >= 0; i--) {
+                    const lDef = layerDefs[i];
+                    let targetLayer = null;
+                    for (let j = 0; j < docLayers.length; j++) {
+                        if (docLayers[j].isValid && docLayers[j].name.toLowerCase() === lDef.name.toLowerCase()) {
+                            targetLayer = docLayers[j];
+                            break;
+                        }
+                    }
+                    if (!targetLayer && lDef.aliases) {
+                        for (let a = 0; a < lDef.aliases.length; a++) {
+                            for (let k = 0; k < docLayers.length; k++) {
+                                if (docLayers[k].isValid && docLayers[k].name.toLowerCase() === lDef.aliases[a].toLowerCase()) {
+                                    targetLayer = docLayers[k];
+                                    break;
+                                }
+                            }
+                            if (targetLayer) break;
+                        }
+                    }
+                    if (!targetLayer) {
+                        targetLayer = doc.layers.add({ name: lDef.name });
+                    } else if (targetLayer.name !== lDef.name) {
+                        try { targetLayer.name = lDef.name; } catch (_) {}
+                    }
+                    try {
+                        targetLayer.locked = false;
+                        targetLayer.visible = true;
+                    } catch (_) {}
+                    if (lDef.name === "Background") {
+                        try { targetLayer.move(1699021422); } catch (_) {} // LocationOptions.AT_END
+                    } else if (lDef.name === "Foreground" && doc.layers.length > 0) {
+                        try { targetLayer.move(1696236390, doc.layers[0]); } catch (_) {} // LocationOptions.BEFORE
+                    }
+                }
+                // Clean up any remaining empty unused layers that aren't the 3 official layers
+                const remainingLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : [];
+                const officialNames = ["Foreground", "Master: expand for cover options", "Background"];
+                for (let r = remainingLayers.length - 1; r >= 0; r--) {
+                    const rl = remainingLayers[r];
+                    if (rl && rl.isValid && !officialNames.includes(rl.name)) {
+                        const items = rl.pageItems ? (rl.pageItems.everyItem ? rl.pageItems.everyItem().getElements() : rl.pageItems) : [];
+                        if (items.length === 0) {
+                            try { rl.remove(); } catch (_) {}
+                        }
                     }
                 }
             } catch (err) {
@@ -1172,8 +1211,8 @@ class QgdsLayoutEngineService extends BaseService {
                             if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.name && cm.name.toLowerCase().indexOf(req.searchStr) !== -1) {
                                 try {
                                     if (!options.dryRun) {
-                                        cm.namePrefix = req.prefix;
-                                        cm.baseName = req.baseName;
+                                        if (cm.baseName !== req.baseName) cm.baseName = req.baseName;
+                                        if (cm.namePrefix !== req.prefix) cm.namePrefix = req.prefix;
                                     }
                                     foundMaster = cm;
                                     report.mastersCreated.push(req.prefix + "-" + req.baseName);
@@ -1190,8 +1229,8 @@ class QgdsLayoutEngineService extends BaseService {
                             if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.name && req.aliases.indexOf(cm.name.toLowerCase().trim()) !== -1) {
                                 try {
                                     if (!options.dryRun) {
-                                        cm.namePrefix = req.prefix;
-                                        cm.baseName = req.baseName;
+                                        if (cm.baseName !== req.baseName) cm.baseName = req.baseName;
+                                        if (cm.namePrefix !== req.prefix) cm.namePrefix = req.prefix;
                                     }
                                     foundMaster = cm;
                                     report.mastersCreated.push(req.prefix + "-" + req.baseName);
@@ -1208,7 +1247,7 @@ class QgdsLayoutEngineService extends BaseService {
                             if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && cm.namePrefix === req.prefix) {
                                 try {
                                     if (!options.dryRun) {
-                                        cm.baseName = req.baseName;
+                                        if (cm.baseName !== req.baseName) cm.baseName = req.baseName;
                                     }
                                     foundMaster = cm;
                                     report.mastersCreated.push(req.prefix + "-" + req.baseName);
@@ -1221,25 +1260,31 @@ class QgdsLayoutEngineService extends BaseService {
                     // 5. Create new master spread
                     if (!foundMaster && !options.dryRun) {
                         try {
-                            const newM = doc.masterSpreads.add();
-                            newM.namePrefix = req.prefix;
-                            newM.baseName = req.baseName;
-                            foundMaster = newM;
-                            report.mastersCreated.push(req.prefix + "-" + req.baseName);
+                            const newM = req.isSinglePage
+                                ? (doc.masterSpreads.add(1) || doc.masterSpreads.add())
+                                : doc.masterSpreads.add();
+                            if (newM && newM.isValid) {
+                                try { if (newM.baseName !== req.baseName) newM.baseName = req.baseName; } catch (_) {}
+                                try { if (newM.namePrefix !== req.prefix) newM.namePrefix = req.prefix; } catch (_) {}
+                                foundMaster = newM;
+                                report.mastersCreated.push(req.prefix + "-" + req.baseName);
+                            }
                         } catch (_) {}
                     }
 
                     if (foundMaster && foundMaster.isValid) {
                         adoptedMasterIds.add(foundMaster.id || foundMaster);
 
-                        // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK
+                        // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (remove left/verso page in facing pages)
                         if (req.isSinglePage && !options.dryRun && foundMaster.pages) {
                             try {
-                                const mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : foundMaster.pages;
-                                while (mPages.length > 1) {
-                                    const pToRemove = mPages.pop();
-                                    if (pToRemove && pToRemove.isValid) {
-                                        try { pToRemove.remove(); } catch (_) {}
+                                while (foundMaster.pages.length > 1) {
+                                    if (typeof foundMaster.pages.firstItem === "function" && foundMaster.pages.firstItem().isValid) {
+                                        foundMaster.pages.firstItem().remove();
+                                    } else if (foundMaster.pages[0] && foundMaster.pages[0].isValid) {
+                                        foundMaster.pages[0].remove();
+                                    } else {
+                                        break;
                                     }
                                 }
                             } catch (_) {}
@@ -1358,12 +1403,12 @@ class QgdsLayoutEngineService extends BaseService {
             try {
                 const themeName = options.theme || "Blue";
                 const gradientName = themeName + " - Gradient";
-                const themeGrad = doc.gradients?.itemByName ? doc.gradients.itemByName(gradientName) : null;
-                const themeColor = doc.colors?.itemByName ? (doc.colors.itemByName(themeName + " - Medium")?.isValid ? doc.colors.itemByName(themeName + " - Medium") : doc.colors.itemByName(themeName + " - Dark")) : null;
-                const fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : ((themeColor && themeColor.isValid) ? themeColor : null);
+                const themeGrad = doc.gradients?.itemByName ? (doc.gradients.itemByName(gradientName)?.isValid ? doc.gradients.itemByName(gradientName) : null) : null;
+                const themeColor = doc.colors?.itemByName ? (doc.colors.itemByName(themeName + " - Medium")?.isValid ? doc.colors.itemByName(themeName + " - Medium") : (doc.colors.itemByName(themeName + " - Dark")?.isValid ? doc.colors.itemByName(themeName + " - Dark") : null)) : null;
+                const fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : ((themeColor && themeColor.isValid) ? themeColor : (doc.colors?.itemByName("Black")?.isValid ? doc.colors.itemByName("Black") : null));
 
-                const brandLayer = doc.layers?.itemByName ? (doc.layers.itemByName("Brand Assets / Badges")?.isValid ? doc.layers.itemByName("Brand Assets / Badges") : doc.layers.itemByName("Brand Assets")) : null;
-                const hfLayer = doc.layers?.itemByName ? doc.layers.itemByName("Headers & Footers") : null;
+                const coverLayer = doc.layers?.itemByName ? (doc.layers.itemByName("Master: expand for cover options")?.isValid ? doc.layers.itemByName("Master: expand for cover options") : doc.layers[0]) : doc.layers[0];
+                const fgLayer = doc.layers?.itemByName ? (doc.layers.itemByName("Foreground")?.isValid ? doc.layers.itemByName("Foreground") : doc.layers[0]) : doc.layers[0];
                 const bleedPt = 3 / PT_TO_MM;
                 const pWidthPt = metrics.shortEdge / PT_TO_MM;
                 const pHeightPt = metrics.longEdge / PT_TO_MM;
@@ -1381,7 +1426,7 @@ class QgdsLayoutEngineService extends BaseService {
                             label: "DynamicBrandHeader",
                             name: "Brand bar - Small",
                             geometricBounds: [-bleedPt, -bleedPt, scaledH, pw - baseMarginPt],
-                            itemLayer: brandLayer || doc.layers[0]
+                            itemLayer: coverLayer
                         });
                         if (barRect && barRect.isValid) {
                             barRect.strokeWeight = 0;
@@ -1406,7 +1451,7 @@ class QgdsLayoutEngineService extends BaseService {
                             label: "DynamicBrandFooter",
                             name: "Cover Footer Banner",
                             geometricBounds: [ph - scaledFootH, -bleedPt, ph + bleedPt, pw + bleedPt],
-                            itemLayer: brandLayer || doc.layers[0]
+                            itemLayer: coverLayer
                         });
                         if (footRect && footRect.isValid) {
                             footRect.strokeWeight = 0;
@@ -1432,7 +1477,7 @@ class QgdsLayoutEngineService extends BaseService {
                             label: "DynamicBrandBackCover",
                             name: "Back Cover Background",
                             geometricBounds: [ph - scaledBackH, baseMarginPt, ph + bleedPt, pw + bleedPt],
-                            itemLayer: brandLayer || doc.layers[0]
+                            itemLayer: coverLayer
                         });
                         if (backRect && backRect.isValid) {
                             backRect.strokeWeight = 0;
@@ -1458,8 +1503,8 @@ class QgdsLayoutEngineService extends BaseService {
                 if (options.injectFooters !== false && bContentMaster && bContentMaster.isValid) {
                     const cPages = bContentMaster.pages?.everyItem ? bContentMaster.pages.everyItem().getElements() : [];
                     const pubTitle = options.publicationTitle || (doc.name ? String(doc.name).replace(/\\.[^.]+$/, "") : "Queensland Government Publication");
-                    const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers");
-                    const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character");
+                    const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers") || DomResolver.getParagraphStyleSafely(doc, "Footer");
+                    const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character") || DomResolver.getCharacterStyleSafely(doc, "Bold");
 
                     for (let cpIdx = 0; cpIdx < cPages.length; cpIdx++) {
                         const cp = cPages[cpIdx];
@@ -1485,13 +1530,13 @@ class QgdsLayoutEngineService extends BaseService {
                                 label: "DynamicContentFooter",
                                 name: "Content Footer - Page Number",
                                 geometricBounds: [footerY1, baseMarginPt, footerY2, baseMarginPt + liveW * 0.2],
-                                itemLayer: hfLayer || doc.layers[0]
+                                itemLayer: fgLayer
                             });
                             const tfTitle = cp.textFrames.add({
                                 label: "DynamicContentFooter",
                                 name: "Content Footer - Document Title",
                                 geometricBounds: [footerY1, baseMarginPt + liveW * 0.25, footerY2, pw - baseMarginPt],
-                                itemLayer: hfLayer || doc.layers[0]
+                                itemLayer: fgLayer
                             });
                             try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
                             try { tfTitle.contents = pubTitle; } catch (_) {}
@@ -1509,13 +1554,13 @@ class QgdsLayoutEngineService extends BaseService {
                                 label: "DynamicContentFooter",
                                 name: "Content Footer - Document Title",
                                 geometricBounds: [footerY1, baseMarginPt, footerY2, pw - baseMarginPt - liveW * 0.25],
-                                itemLayer: hfLayer || doc.layers[0]
+                                itemLayer: fgLayer
                             });
                             const tfNum = cp.textFrames.add({
                                 label: "DynamicContentFooter",
                                 name: "Content Footer - Page Number",
                                 geometricBounds: [footerY1, pw - baseMarginPt - liveW * 0.2, footerY2, pw - baseMarginPt],
-                                itemLayer: hfLayer || doc.layers[0]
+                                itemLayer: fgLayer
                             });
                             try { tfTitle.contents = pubTitle; } catch (_) {}
                             try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
@@ -1531,6 +1576,11 @@ class QgdsLayoutEngineService extends BaseService {
                         }
                         report.footersInjected++;
                     }
+                }
+
+                // Ensure Page 1 is mapped to A-Cover
+                if (aCoverMaster && aCoverMaster.isValid && doc.pages && doc.pages.length > 0 && doc.pages[0].isValid) {
+                    try { doc.pages[0].appliedMaster = aCoverMaster; } catch (_) {}
                 }
             } catch (err) {
                 if (options.failurePolicy === "strict") throw err;
@@ -1728,7 +1778,7 @@ class QgdsSpecimenService extends BaseService {
         const targetPage = doc.pages[options.pageIndex || 0] || doc.pages[0];
         if (!targetPage || !targetPage.isValid) return report;
 
-        let targetLayer = doc.layers ? (doc.layers.itemByName("Foreground") || doc.layers.itemByName("Content") || doc.layers[0]) : null;
+        let targetLayer = doc.layers ? (doc.layers.itemByName("Foreground")?.isValid ? doc.layers.itemByName("Foreground") : doc.layers[0]) : null;
 
         try {
             const pageItems = targetPage.pageItems ? (targetPage.pageItems.everyItem ? targetPage.pageItems.everyItem().getElements() : targetPage.pageItems) : [];
@@ -1754,8 +1804,10 @@ class QgdsSpecimenService extends BaseService {
 
         let tf;
         try {
-            tf = targetPage.textFrames.add(targetLayer);
-            tf.geometricBounds = [top, left, bottom, right];
+            tf = targetPage.textFrames.add({
+                itemLayer: targetLayer,
+                geometricBounds: [top, left, bottom, right]
+            });
             tf.label = "DynamicBrandSpecimen";
             tf.name = "Typography Specimen";
             if (tf.textFramePreferences) {
@@ -1812,16 +1864,68 @@ class QgdsSpecimenService extends BaseService {
                         t1.rows[1].cells[0].contents = "Solid Header Specimen Alpha";
                         t1.rows[1].cells[1].contents = "$4,250,000";
                         t1.rows[1].cells[2].contents = "Active";
-                        const st1 = DomResolver.getTableStyleSafely ? DomResolver.getTableStyleSafely(doc, "Table - Solid Header") : (doc.tableStyles ? doc.tableStyles.itemByName("Table - Solid Header") : null);
+                        const st1 = DomResolver.getTableStyleSafely ? (DomResolver.getTableStyleSafely(doc, "Table - Solid Header") || DomResolver.getTableStyleSafely(doc, "Table - Bold Header")) : (doc.tableStyles ? (doc.tableStyles.itemByName("Table - Solid Header") || doc.tableStyles.itemByName("Table - Bold Header")) : null);
                         if (st1 && st1.isValid) {
                             t1.appliedTableStyle = st1;
                             if (typeof t1.clearTableStyleOverrides === "function") t1.clearTableStyleOverrides(true);
+                        }
+                        const cellHeaderSolid = DomResolver.getParagraphStyleSafely(doc, "Cell - Header Text Solid", "Tables") || DomResolver.getParagraphStyleSafely(doc, "Cell - Header Solid", "Tables") || doc.paragraphStyles?.itemByName("Cell - Header Text Solid");
+                        const cellBody = DomResolver.getParagraphStyleSafely(doc, "Body Text", "Narrative") || DomResolver.getParagraphStyleSafely(doc, "Body", "Narrative") || doc.paragraphStyles?.itemByName("Body Text");
+                        if (cellHeaderSolid && cellHeaderSolid.isValid) {
+                            for (let c = 0; c < 3; c++) {
+                                try { t1.rows[0].cells[c].paragraphs[0].appliedParagraphStyle = cellHeaderSolid; } catch (_) {}
+                            }
+                        }
+                        if (cellBody && cellBody.isValid) {
+                            for (let r = 1; r < 4; r++) {
+                                for (let c = 0; c < 3; c++) {
+                                    try { t1.rows[r].cells[c].paragraphs[0].appliedParagraphStyle = cellBody; } catch (_) {}
+                                }
+                            }
                         }
                         report.tablesInjected++;
                     }
                 }
             } catch (_) {}
         }
+
+        try {
+            doc.recompose();
+            if (tf.overflows && doc.pages && doc.pages.length === 1) {
+                const bContentM = doc.masterSpreads?.itemByName ? (doc.masterSpreads.itemByName("B-Content")?.isValid ? doc.masterSpreads.itemByName("B-Content") : null) : null;
+                const p2 = doc.pages.add(1699021422); // LocationOptions.AT_END
+                if (p2 && p2.isValid) {
+                    if (bContentM) {
+                        try { p2.appliedMaster = bContentM; } catch (_) {}
+                    }
+                    const p2B = p2.bounds || [0, 0, 841.89, 595.28];
+                    const npTop = p2B[0] + m + 12;
+                    const npBottom = p2B[2] - m - (pageHeight * 0.08);
+                    const npLeft = p2B[1] + m;
+                    const npRight = p2B[3] - m;
+                    if (npBottom > npTop + 30) {
+                        const nextTf = p2.textFrames.add({
+                            itemLayer: targetLayer,
+                            geometricBounds: [npTop, npLeft, npBottom, npRight]
+                        });
+                        nextTf.label = "DynamicBrandSpecimen";
+                        nextTf.name = "Typography Specimen";
+                        if (nextTf.textFramePreferences) {
+                            nextTf.textFramePreferences.textColumnCount = pageWidth > 500 ? 2 : 1;
+                        }
+                        const swNone = doc.swatches ? (doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None")) : null;
+                        if (swNone && swNone.isValid) {
+                            nextTf.fillColor = swNone;
+                            nextTf.strokeColor = swNone;
+                        }
+                        nextTf.strokeWeight = 0;
+                        tf.nextTextFrame = nextTf;
+                        report.specimenFramesCreated++;
+                    }
+                }
+            }
+        } catch (_) {}
+
         doc.recompose();
         return report;
     }
@@ -1933,16 +2037,18 @@ if (!content.includes("class QgdsResetService")) {
     content = content.replace("class QgdsPublishingPipelineService", `${resetServiceBlock}\n${specimenServiceBlock}\n${templateBuilderBlock}\nclass QgdsPublishingPipelineService`);
 }
 
-// Update QgdsPublishingPipelineService to orchestrate LayoutEngineService
+// Update QgdsPublishingPipelineService to orchestrate BrandEngine first, then LayoutEngine, Specimen, Editorial, and Preflight
 const updatedPublishingPipeline = `class QgdsPublishingPipelineService extends PipelineService {
     constructor() {
-        const layoutEngine = new QgdsLayoutEngineService();
         const brandEngine = new QgdsBrandEngineService();
+        const layoutEngine = new QgdsLayoutEngineService();
+        const specimenService = new QgdsSpecimenService();
         const semanticEditorial = new QgdsSemanticEditorialService();
         const preflight = new QgdsPreflightRemediationService();
-        super([layoutEngine, brandEngine, semanticEditorial, preflight], "QGDS Master Publishing Pipeline");
-        this.layoutEngineService = layoutEngine;
+        super([brandEngine, layoutEngine, specimenService, semanticEditorial, preflight], "QGDS Master Publishing Pipeline");
         this.brandEngineService = brandEngine;
+        this.layoutEngineService = layoutEngine;
+        this.specimenService = specimenService;
         this.semanticEditorialService = semanticEditorial;
         this.preflightService = preflight;
     }
@@ -1950,11 +2056,29 @@ const updatedPublishingPipeline = `class QgdsPublishingPipelineService extends P
         return super.execute(doc, options);
     }
     process(doc, options) {
+        const activeTheme = options.brandEngineOptions?.theme || options.theme || "Blue";
+        const brandOpts = {
+            theme: activeTheme,
+            applyObjectStyles: true,
+            ...(options.brandEngineOptions || {})
+        };
+        const layoutOpts = {
+            theme: activeTheme,
+            ...(options.layoutEngineOptions || {})
+        };
+        const specimenOpts = {
+            pageIndex: 0,
+            injectTables: true,
+            injectComponentArchetypes: true,
+            dryRun: options.specimenOptions?.dryRun === true || options.runSpecimen === false,
+            ...(options.specimenOptions || {})
+        };
         const stepOptions = {
             ...(options.stepOptions || {}),
-            "QGDS Layout & Master Spread Engine": options.layoutEngineOptions || {},
-            "QGDS Brand Engine": options.brandEngineOptions || {},
-            "QGDS Brand Engine & Theme Styler": options.brandEngineOptions || {},
+            "QGDS Brand Engine": brandOpts,
+            "QGDS Brand Engine & Theme Styler": brandOpts,
+            "QGDS Layout & Master Spread Engine": layoutOpts,
+            "QGDS Typography Specimen & Component Archetype Injection": specimenOpts,
             "QGDS Semantic Editorial Styler": options.semanticEditorialOptions || {},
             "QGDS Preflight & Remediation": options.preflightOptions || {}
         };
@@ -2118,7 +2242,7 @@ const comprehensiveDashboardAndMain = `function showNativePublishingDashboard(do
         const r2Specimen = p2Col.dialogRows.add();
         const cbSpecimen = r2Specimen.checkboxControls.add({
             staticLabel: "3. Specimen & Archetypes (Inject typography specimen & accessible tables into Page 1)",
-            checkedState: false
+            checkedState: true
         });
 
         const r2Editorial = p2Col.dialogRows.add();
@@ -2395,7 +2519,10 @@ function main() {
             const pipelineResult = pipeline.execute(doc, {
                 notifyOnCompletion: false,
                 autoCopyDiagnostics: false,
+                theme: config.theme,
+                runSpecimen: config.runSpecimen,
                 layoutEngineOptions: {
+                    theme: config.theme,
                     enforceStratification: config.runLayout,
                     createMasters: config.runLayout,
                     cleanMasters: config.runLayout,
@@ -2411,8 +2538,15 @@ function main() {
                     applyGradients: config.runBrand,
                     applyParagraphStyles: config.runBrand,
                     applyCharacterStyles: config.runBrand,
+                    applyObjectStyles: config.runBrand,
                     applyCellStyles: config.runBrand,
                     applyTableStyles: config.runBrand
+                },
+                specimenOptions: {
+                    pageIndex: 0,
+                    injectTables: true,
+                    injectComponentArchetypes: true,
+                    dryRun: !config.runSpecimen
                 },
                 onProgress: (p) => {
                     logger.info(\`[Doc \${dIdx + 1}/\${targetDocs.length} - Alignment \${p.percentage}%] \${p.stage}\`);

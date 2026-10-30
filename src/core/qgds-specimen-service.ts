@@ -145,8 +145,10 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     // 4. Create Specimen Text Frame
     let tf: any;
     try {
-      tf = targetPage.textFrames.add(targetLayer);
-      tf.geometricBounds = [top, left, bottom, right];
+      tf = targetPage.textFrames.add({
+        itemLayer: targetLayer,
+        geometricBounds: [top, left, bottom, right]
+      });
       tf.label = dynamicLabel;
       tf.name = specimenName;
 
@@ -348,8 +350,10 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
       const calloutLeft = pB[1] + 50;
       const calloutRight = pB[3] - 50;
 
-      const calloutFrame = page.textFrames.add(layer);
-      calloutFrame.geometricBounds = [calloutTop, calloutLeft, calloutBottom, calloutRight];
+      const calloutFrame = page.textFrames.add({
+        itemLayer: layer,
+        geometricBounds: [calloutTop, calloutLeft, calloutBottom, calloutRight]
+      });
       calloutFrame.label = adapter ? `${adapter.tenantId}_BrandComponent` : "DynamicBrandComponent";
       calloutFrame.name = "Component Archetype - Callout";
       calloutFrame.contents = "Important Advisory Notice\rAll projects must undergo environmental and accessibility certification before publication.\r";

@@ -290,27 +290,31 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           // 5. Create new master spread if not adopted
           if (!foundMaster && !options.dryRun) {
             try {
-              const newM = doc.masterSpreads.add();
-              newM.namePrefix = mPlan.prefix;
-              newM.baseName = mPlan.baseName;
-              foundMaster = newM;
-              report.mastersCreated.push(mPlan.fullName);
+              const newM = mPlan.isSinglePage
+                ? (doc.masterSpreads.add(1) || doc.masterSpreads.add())
+                : doc.masterSpreads.add();
+              if (newM && newM.isValid) {
+                try { if (newM.baseName !== mPlan.baseName) newM.baseName = mPlan.baseName; } catch (_) {}
+                try { if (newM.namePrefix !== mPlan.prefix) newM.namePrefix = mPlan.prefix; } catch (_) {}
+                foundMaster = newM;
+                report.mastersCreated.push(mPlan.fullName);
+              }
             } catch (_) {}
           }
 
           if (foundMaster && foundMaster.isValid) {
             adoptedMasterIds.add(foundMaster.id || foundMaster);
 
-            // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK
+            // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (Remove first verso page until single recto remains)
             if (mPlan.isSinglePage && !options.dryRun && foundMaster.pages) {
               try {
-                const mPages = foundMaster.pages.everyItem
-                  ? foundMaster.pages.everyItem().getElements()
-                  : foundMaster.pages;
-                while (mPages.length > 1) {
-                  const pToRemove = mPages.pop();
-                  if (pToRemove && pToRemove.isValid) {
-                    try { pToRemove.remove(); } catch (_) {}
+                while (foundMaster.pages.length > 1) {
+                  if (typeof foundMaster.pages.firstItem === "function" && foundMaster.pages.firstItem().isValid) {
+                    foundMaster.pages.firstItem().remove();
+                  } else if (foundMaster.pages[0] && foundMaster.pages[0].isValid) {
+                    foundMaster.pages[0].remove();
+                  } else {
+                    break;
                   }
                 }
               } catch (_) {}
