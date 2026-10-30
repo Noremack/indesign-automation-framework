@@ -553,71 +553,82 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
           // 7a. Inject Master Brand Decorations (Brand bars, Cover footer banner, Back cover background)
           if (options.injectDecorations !== false && mPlan.decorations && mPlan.decorations.length > 0) {
-            for (let pIdx = 0; pIdx < mPages.length; pIdx++) {
-              const pageEl = mPages[pIdx];
-              if (!pageEl || !pageEl.isValid || !pageEl.rectangles) continue;
+            const pageEl = mPages.length > 0 ? mPages[0] : ms;
+            const targetParent = (pageEl && pageEl.rectangles && typeof pageEl.rectangles.add === "function") ? pageEl : ms;
 
-              for (const deco of mPlan.decorations) {
-                let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(deco.layerName) : null;
-                if (!dLayer || !dLayer.isValid) {
-                  dLayer = doc.layers ? doc.layers[0] : null;
-                }
+            for (const deco of mPlan.decorations) {
+              let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(deco.layerName) : null;
+              if (!dLayer || !dLayer.isValid) {
+                dLayer = doc.layers ? doc.layers[0] : null;
+              }
+              if (dLayer && dLayer.isValid) dLayer.locked = false;
 
-                // Purge existing decoration rectangles with same label/name
-                if (pageEl.rectangles.everyItem) {
-                  const rects = pageEl.rectangles.everyItem().getElements();
-                  for (let ri = rects.length - 1; ri >= 0; ri--) {
-                    if (
-                      rects[ri].label === deco.label ||
-                      rects[ri].name === deco.name
-                    ) {
-                      try { rects[ri].remove(); } catch (_) {}
-                    }
+              // Purge existing decoration rectangles with same label/name
+              const rectContainer = targetParent.rectangles || ms.rectangles;
+              if (rectContainer && rectContainer.everyItem) {
+                const rects = rectContainer.everyItem().getElements();
+                for (let ri = rects.length - 1; ri >= 0; ri--) {
+                  if (
+                    rects[ri].label === deco.label ||
+                    rects[ri].name === deco.name
+                  ) {
+                    try { rects[ri].remove(); } catch (_) {}
                   }
                 }
+              }
 
-                try {
-                  let rect: any = null;
-                  try {
-                    rect = dLayer && dLayer.isValid ? pageEl.rectangles.add(dLayer) : pageEl.rectangles.add();
-                  } catch (_) {
-                    try { rect = pageEl.rectangles.add(); } catch (_) {}
+              try {
+                let rect: any = null;
+                if (targetParent.rectangles && typeof targetParent.rectangles.add === "function") {
+                  try { rect = targetParent.rectangles.add(); } catch (_) {}
+                  if (!rect) { try { rect = targetParent.rectangles.add({}); } catch (_) {} }
+                  if (!rect && dLayer && dLayer.isValid) { try { rect = targetParent.rectangles.add(dLayer); } catch (_) {} }
+                }
+                if (!rect && ms.rectangles && typeof ms.rectangles.add === "function") {
+                  try { rect = ms.rectangles.add(); } catch (_) {}
+                  if (!rect) { try { rect = ms.rectangles.add({}); } catch (_) {} }
+                  if (!rect && dLayer && dLayer.isValid) { try { rect = ms.rectangles.add(dLayer); } catch (_) {} }
+                }
+
+                if (rect && rect.isValid) {
+                  if (dLayer && dLayer.isValid) try { rect.itemLayer = dLayer; } catch (_) {}
+                  if (deco.geometricBounds) try { rect.geometricBounds = deco.geometricBounds; } catch (_) {}
+                  if (deco.name) try { rect.name = deco.name; } catch (_) {}
+                  if (deco.label) try { rect.label = deco.label; } catch (_) {}
+                  rect.strokeWeight = deco.strokeWeight || 0;
+                  if (fillTarget) {
+                    try { rect.fillColor = fillTarget; } catch (_) {}
+                  }
+                  if (doc.swatches) {
+                    const swatchNone = doc.swatches.item("None")?.isValid
+                      ? doc.swatches.item("None")
+                      : doc.swatches.item("[None]");
+                    if (swatchNone && swatchNone.isValid) try { rect.strokeColor = swatchNone; } catch (_) {}
                   }
 
-                  if (rect && rect.isValid) {
-                    if (dLayer && dLayer.isValid) try { rect.itemLayer = dLayer; } catch (_) {}
-                    if (deco.geometricBounds) try { rect.geometricBounds = deco.geometricBounds; } catch (_) {}
-                    if (deco.name) try { rect.name = deco.name; } catch (_) {}
-                    if (deco.label) try { rect.label = deco.label; } catch (_) {}
-                    rect.strokeWeight = deco.strokeWeight || 0;
-                    if (fillTarget) {
-                      rect.fillColor = fillTarget;
-                    }
-                    if (doc.swatches) {
-                      const swatchNone = doc.swatches.item("None")?.isValid
-                        ? doc.swatches.item("None")
-                        : doc.swatches.item("[None]");
-                      if (swatchNone && swatchNone.isValid) rect.strokeColor = swatchNone;
-                    }
-
-                    if (deco.bottomRightCornerOption && rect.bottomRightCornerOption !== undefined) {
+                  if (deco.bottomRightCornerOption && rect.bottomRightCornerOption !== undefined) {
+                    try {
                       rect.bottomRightCornerOption = deco.bottomRightCornerOption;
                       if (deco.bottomRightCornerRadius) rect.bottomRightCornerRadius = deco.bottomRightCornerRadius;
-                    }
-                    if (deco.topLeftCornerOption && rect.topLeftCornerOption !== undefined) {
+                    } catch (_) {}
+                  }
+                  if (deco.topLeftCornerOption && rect.topLeftCornerOption !== undefined) {
+                    try {
                       rect.topLeftCornerOption = deco.topLeftCornerOption;
                       if (deco.topLeftCornerRadius) rect.topLeftCornerRadius = deco.topLeftCornerRadius;
-                    }
+                    } catch (_) {}
+                  }
 
-                    if (deco.objectStyleName) {
+                  if (deco.objectStyleName) {
+                    try {
                       const objStyle = DomResolver.getObjectStyleSafely(doc, deco.objectStyleName, deco.objectStyleGroup);
                       if (objStyle && objStyle.isValid) {
-                        try { rect.appliedObjectStyle = objStyle; } catch (_) {}
+                        rect.appliedObjectStyle = objStyle;
                       }
-                    }
+                    } catch (_) {}
                   }
-                } catch (_) {}
-              }
+                }
+              } catch (_) {}
             }
           }
 

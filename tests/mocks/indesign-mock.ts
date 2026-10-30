@@ -618,6 +618,8 @@ export class MockMasterSpread {
   public baseName = "Master";
   public pages: MockCollection<MockPage>;
   public pageItems = new MockCollection<any>([]);
+  public rectangles = new MockCollection<MockRectangle>([]);
+  public textFrames = new MockCollection<MockTextFrame>([]);
 
   public get name(): string {
     return `${this.namePrefix}-${this.baseName}`;
@@ -639,6 +641,16 @@ export class MockMasterSpread {
       new MockPage({ name: "A", bounds: [0, 0, 841.89, 595.28] })
     ]);
     this.pages.itemFactory = (p) => new MockPage(p);
+    this.rectangles.itemFactory = (p) => {
+      let rect = p instanceof MockRectangle ? p : new MockRectangle(p);
+      this.pageItems.add(rect);
+      return rect;
+    };
+    this.textFrames.itemFactory = (p) => {
+      let frame = p instanceof MockTextFrame ? p : new MockTextFrame(p);
+      this.pageItems.add(frame);
+      return frame;
+    };
   }
 }
 

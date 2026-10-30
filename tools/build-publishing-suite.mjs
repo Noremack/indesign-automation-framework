@@ -1465,12 +1465,18 @@ class QgdsLayoutEngineService extends BaseService {
                 const pWidthPt = metrics.shortEdge / PT_TO_MM;
                 const pHeightPt = metrics.longEdge / PT_TO_MM;
 
-                function safeAddRect(targetParent, layer, bounds, name, label) {
+                function safeAddRect(pageOrSpread, layer, bounds, name, label) {
+                    if (!pageOrSpread || !pageOrSpread.isValid) return null;
                     let r = null;
-                    try {
-                        r = (layer && layer.isValid) ? targetParent.rectangles.add(layer) : targetParent.rectangles.add();
-                    } catch (_) {
-                        try { r = targetParent.rectangles.add(); } catch (_) {}
+                    if (pageOrSpread.rectangles && typeof pageOrSpread.rectangles.add === "function") {
+                        try { r = pageOrSpread.rectangles.add(); } catch (_) {}
+                        if (!r) { try { r = pageOrSpread.rectangles.add({}); } catch (_) {} }
+                        if (!r && layer && layer.isValid) { try { r = pageOrSpread.rectangles.add(layer); } catch (_) {} }
+                    }
+                    if (!r && pageOrSpread.parent && pageOrSpread.parent.rectangles && typeof pageOrSpread.parent.rectangles.add === "function") {
+                        try { r = pageOrSpread.parent.rectangles.add(); } catch (_) {}
+                        if (!r) { try { r = pageOrSpread.parent.rectangles.add({}); } catch (_) {} }
+                        if (!r && layer && layer.isValid) { try { r = pageOrSpread.parent.rectangles.add(layer); } catch (_) {} }
                     }
                     if (r && r.isValid) {
                         if (layer && layer.isValid) { try { r.itemLayer = layer; } catch (_) {} }
@@ -1481,12 +1487,18 @@ class QgdsLayoutEngineService extends BaseService {
                     return r;
                 }
 
-                function safeAddTF(targetParent, layer, bounds, name, label) {
+                function safeAddTF(pageOrSpread, layer, bounds, name, label) {
+                    if (!pageOrSpread || !pageOrSpread.isValid) return null;
                     let f = null;
-                    try {
-                        f = (layer && layer.isValid) ? targetParent.textFrames.add(layer) : targetParent.textFrames.add();
-                    } catch (_) {
-                        try { f = targetParent.textFrames.add(); } catch (_) {}
+                    if (pageOrSpread.textFrames && typeof pageOrSpread.textFrames.add === "function") {
+                        try { f = pageOrSpread.textFrames.add(); } catch (_) {}
+                        if (!f) { try { f = pageOrSpread.textFrames.add({}); } catch (_) {} }
+                        if (!f && layer && layer.isValid) { try { f = pageOrSpread.textFrames.add(layer); } catch (_) {} }
+                    }
+                    if (!f && pageOrSpread.parent && pageOrSpread.parent.textFrames && typeof pageOrSpread.parent.textFrames.add === "function") {
+                        try { f = pageOrSpread.parent.textFrames.add(); } catch (_) {}
+                        if (!f) { try { f = pageOrSpread.parent.textFrames.add({}); } catch (_) {} }
+                        if (!f && layer && layer.isValid) { try { f = pageOrSpread.parent.textFrames.add(layer); } catch (_) {} }
                     }
                     if (f && f.isValid) {
                         if (layer && layer.isValid) { try { f.itemLayer = layer; } catch (_) {} }
@@ -1497,45 +1509,68 @@ class QgdsLayoutEngineService extends BaseService {
                     return f;
                 }
 
+                // Resolve A-Cover and C-Back masters safely
+                if (!aCoverMaster || !aCoverMaster.isValid) {
+                    aCoverMaster = doc.masterSpreads?.itemByName ? (doc.masterSpreads.itemByName("A-Cover")?.isValid ? doc.masterSpreads.itemByName("A-Cover") : null) : null;
+                }
+                if (!cBackMaster || !cBackMaster.isValid) {
+                    cBackMaster = doc.masterSpreads?.itemByName ? (doc.masterSpreads.itemByName("C-Back")?.isValid ? doc.masterSpreads.itemByName("C-Back") : null) : null;
+                }
+
                 // A-Cover: Brand bar - Small & Cover Footer Banner
                 try {
-                    if (aCoverMaster && aCoverMaster.isValid && aCoverMaster.pages) {
-                        const cp = aCoverMaster.pages[0];
-                        if (cp && cp.isValid && cp.rectangles) {
-                            const bounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
-                            const pw = Math.abs(bounds[3] - bounds[1]);
-                            const ph = Math.abs(bounds[2] - bounds[0]);
-                            const scaledH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+                    if (aCoverMaster && aCoverMaster.isValid) {
+                        const mPages = aCoverMaster.pages ? (aCoverMaster.pages.everyItem ? aCoverMaster.pages.everyItem().getElements() : aCoverMaster.pages) : [];
+                        const cp = mPages.length > 0 ? mPages[0] : aCoverMaster;
+                        const targetParent = (cp && cp.rectangles && typeof cp.rectangles.add === "function") ? cp : aCoverMaster;
 
-                            const barRect = safeAddRect(cp, coverLayer, [-bleedPt, -bleedPt, scaledH, pw - baseMarginPt], "Brand bar - Small", "DynamicBrandHeader");
-                            if (barRect && barRect.isValid) {
-                                barRect.strokeWeight = 0;
-                                if (fillTarget) barRect.fillColor = fillTarget;
-                                if (doc.swatches) {
-                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                    if (swNone && swNone.isValid) barRect.strokeColor = swNone;
-                                }
+                        const rawBounds = (cp && (cp.bounds || cp.geometricBounds)) ? (cp.bounds || cp.geometricBounds) : null;
+                        const pw = rawBounds ? Math.abs(rawBounds[3] - rawBounds[1]) : pWidthPt;
+                        const ph = rawBounds ? Math.abs(rawBounds[2] - rawBounds[0]) : pHeightPt;
+                        const pageX = rawBounds ? rawBounds[1] : 0;
+                        const pageY = rawBounds ? rawBounds[0] : 0;
+                        const scaledH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+
+                        if (coverLayer && coverLayer.isValid) coverLayer.locked = false;
+
+                        // 1. Brand bar - Small
+                        const barBounds = [pageY - bleedPt, pageX - bleedPt, pageY + scaledH, pageX + pw - baseMarginPt];
+                        const barRect = safeAddRect(targetParent, coverLayer, barBounds, "Brand bar - Small", "DynamicBrandHeader");
+                        if (barRect && barRect.isValid) {
+                            try { barRect.strokeWeight = 0; } catch (_) {}
+                            try { if (fillTarget) barRect.fillColor = fillTarget; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) barRect.strokeColor = swNone;
+                            } catch (_) {}
+                            try {
                                 const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Bottom Right", "Frames - Radius Large");
                                 if (objStyle && objStyle.isValid) {
-                                    try { barRect.appliedObjectStyle = objStyle; } catch (_) {}
-                                } else {
-                                    if (barRect.bottomRightCornerOption !== undefined) {
-                                        barRect.bottomRightCornerOption = 1852797549;
-                                        barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
-                                    }
+                                    barRect.appliedObjectStyle = objStyle;
+                                } else if (barRect.bottomRightCornerOption !== undefined) {
+                                    barRect.bottomRightCornerOption = 1852797549; // ROUNDED_CORNER
+                                    barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
                                 }
-                            }
+                            } catch (_) {}
+                            report.details.push("Injected 'Brand bar - Small' on A-Cover.");
+                        } else {
+                            report.details.push("Failed to create 'Brand bar - Small' on A-Cover.");
+                        }
 
-                            const scaledFootH = Math.max(35, ph * 0.10);
-                            const footRect = safeAddRect(cp, coverLayer, [ph - scaledFootH, -bleedPt, ph + bleedPt, pw + bleedPt], "Cover Footer Banner", "DynamicBrandFooter");
-                            if (footRect && footRect.isValid) {
-                                footRect.strokeWeight = 0;
-                                if (fillTarget) footRect.fillColor = fillTarget;
-                                if (doc.swatches) {
-                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                    if (swNone && swNone.isValid) footRect.strokeColor = swNone;
-                                }
-                            }
+                        // 2. Cover Footer Banner
+                        const scaledFootH = Math.max(35, ph * 0.10);
+                        const footBounds = [pageY + ph - scaledFootH, pageX - bleedPt, pageY + ph + bleedPt, pageX + pw + bleedPt];
+                        const footRect = safeAddRect(targetParent, coverLayer, footBounds, "Cover Footer Banner", "DynamicBrandFooter");
+                        if (footRect && footRect.isValid) {
+                            try { footRect.strokeWeight = 0; } catch (_) {}
+                            try { if (fillTarget) footRect.fillColor = fillTarget; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) footRect.strokeColor = swNone;
+                            } catch (_) {}
+                            report.details.push("Injected 'Cover Footer Banner' on A-Cover.");
+                        } else {
+                            report.details.push("Failed to create 'Cover Footer Banner' on A-Cover.");
                         }
                     }
                 } catch (coverErr) {
@@ -1544,32 +1579,41 @@ class QgdsLayoutEngineService extends BaseService {
 
                 // C-Back: Back Cover Background
                 try {
-                    if (cBackMaster && cBackMaster.isValid && cBackMaster.pages) {
-                        const bp = cBackMaster.pages[0];
-                        if (bp && bp.isValid && bp.rectangles) {
-                            const bounds = bp.bounds || [0, 0, pHeightPt, pWidthPt];
-                            const pw = Math.abs(bounds[3] - bounds[1]);
-                            const ph = Math.abs(bounds[2] - bounds[0]);
-                            const scaledBackH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
+                    if (cBackMaster && cBackMaster.isValid) {
+                        const mPages = cBackMaster.pages ? (cBackMaster.pages.everyItem ? cBackMaster.pages.everyItem().getElements() : cBackMaster.pages) : [];
+                        const bp = mPages.length > 0 ? mPages[0] : cBackMaster;
+                        const backTargetParent = (bp && bp.rectangles && typeof bp.rectangles.add === "function") ? bp : cBackMaster;
 
-                            const backRect = safeAddRect(bp, coverLayer, [ph - scaledBackH, baseMarginPt, ph + bleedPt, pw + bleedPt], "Back Cover Background", "DynamicBrandBackCover");
-                            if (backRect && backRect.isValid) {
-                                backRect.strokeWeight = 0;
-                                if (fillTarget) backRect.fillColor = fillTarget;
-                                if (doc.swatches) {
-                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                    if (swNone && swNone.isValid) backRect.strokeColor = swNone;
-                                }
+                        const rawBounds = (bp && (bp.bounds || bp.geometricBounds)) ? (bp.bounds || bp.geometricBounds) : null;
+                        const pw = rawBounds ? Math.abs(rawBounds[3] - rawBounds[1]) : pWidthPt;
+                        const ph = rawBounds ? Math.abs(rawBounds[2] - rawBounds[0]) : pHeightPt;
+                        const pageX = rawBounds ? rawBounds[1] : 0;
+                        const pageY = rawBounds ? rawBounds[0] : 0;
+                        const scaledBackH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
+
+                        if (coverLayer && coverLayer.isValid) coverLayer.locked = false;
+
+                        const backBounds = [pageY + ph - scaledBackH, pageX + baseMarginPt, pageY + ph + bleedPt, pageX + pw + bleedPt];
+                        const backRect = safeAddRect(backTargetParent, coverLayer, backBounds, "Back Cover Background", "DynamicBrandBackCover");
+                        if (backRect && backRect.isValid) {
+                            try { backRect.strokeWeight = 0; } catch (_) {}
+                            try { if (fillTarget) backRect.fillColor = fillTarget; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) backRect.strokeColor = swNone;
+                            } catch (_) {}
+                            try {
                                 const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Top Left", "Frames - Radius Large");
                                 if (objStyle && objStyle.isValid) {
-                                    try { backRect.appliedObjectStyle = objStyle; } catch (_) {}
-                                } else {
-                                    if (backRect.topLeftCornerOption !== undefined) {
-                                        backRect.topLeftCornerOption = 1852797549;
-                                        backRect.topLeftCornerRadius = 22.68 * scalingFactor;
-                                    }
+                                    backRect.appliedObjectStyle = objStyle;
+                                } else if (backRect.topLeftCornerOption !== undefined) {
+                                    backRect.topLeftCornerOption = 1852797549; // ROUNDED_CORNER
+                                    backRect.topLeftCornerRadius = 22.68 * scalingFactor;
                                 }
-                            }
+                            } catch (_) {}
+                            report.details.push("Injected 'Back Cover Background' on C-Back.");
+                        } else {
+                            report.details.push("Failed to create 'Back Cover Background' on C-Back.");
                         }
                     }
                 } catch (backErr) {

@@ -118,5 +118,24 @@ describe("QGDS Layout & Master Spread Engine", () => {
     expect(doc.masterSpreads.length).toBe(1);
     expect(result.data!.footersInjected).toBe(0);
   });
+
+  it("injects brand decorations (brand bar, footer banner) onto cover master spread", () => {
+    const doc = new MockDocument();
+    const service = new QgdsLayoutEngineService();
+
+    const result = service.execute(doc, {
+      publicationTitle: "Brand Report",
+      injectDecorations: true,
+      autoCopyDiagnostics: false,
+      notifyOnCompletion: false
+    });
+
+    expect(result.success).toBe(true);
+    const coverMaster = doc.masterSpreads.everyItem().getElements().find(m => m.name.includes("Cover"));
+    expect(coverMaster).toBeDefined();
+    const coverPage = coverMaster!.pages[0];
+    const coverItems = coverPage.pageItems.everyItem().getElements();
+    expect(coverItems.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
