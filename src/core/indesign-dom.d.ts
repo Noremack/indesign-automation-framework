@@ -84,6 +84,13 @@ declare module "indesign" {
     ASK = 1634954091
   }
 
+  export enum LocationOptions {
+    BEFORE = 1650812527,
+    AFTER = 1634104421,
+    AT_BEGINNING = 1635017319,
+    AT_END = 1635018094
+  }
+
   export interface Layer {
     readonly id: number;
     readonly isValid: boolean;

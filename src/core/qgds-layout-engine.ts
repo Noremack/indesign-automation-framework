@@ -1,3 +1,4 @@
+import { LocationOptions } from "indesign";
 import { BaseService } from "./base-service";
 import { DomResolver } from "./dom-resolver";
 import { LayoutPlanner, LayoutExecutionPlan } from "./layout-planner";
@@ -184,6 +185,41 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             } catch (_) {}
           }
         }
+
+        // Explicitly enforce Z-index stacking order: Foreground (index 0, top), Cover Options (index 1), Background (index 2, bottom)
+        const locBefore = LocationOptions?.BEFORE || 1650812527; // 'befo'
+        const locAfter = LocationOptions?.AFTER || 1634104421;   // 'afte'
+
+        const fg = doc.layers.itemByName ? doc.layers.itemByName("Foreground") : null;
+        const cov = doc.layers.itemByName ? doc.layers.itemByName("Master: expand for cover options") : null;
+        const bg = doc.layers.itemByName ? doc.layers.itemByName("Background") : null;
+
+        if (fg && fg.isValid && doc.layers.length > 0 && doc.layers[0] !== fg) {
+          try { fg.move(locBefore, doc.layers[0]); } catch (_) {}
+        }
+        if (cov && cov.isValid && fg && fg.isValid) {
+          try { cov.move(locAfter, fg); } catch (_) {}
+        }
+        if (bg && bg.isValid && cov && cov.isValid) {
+          try { bg.move(locAfter, cov); } catch (_) {}
+        }
+
+        // Clean up remaining empty unused layers that aren't the 3 official layers
+        const remainingLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : [];
+        const officialNames = ["Foreground", "Master: expand for cover options", "Background"];
+        for (let r = remainingLayers.length - 1; r >= 0; r--) {
+          const rl = remainingLayers[r];
+          if (rl && rl.isValid && !officialNames.includes(rl.name)) {
+            try {
+              rl.locked = false;
+              const items = rl.pageItems ? (rl.pageItems.everyItem ? rl.pageItems.everyItem().getElements() : rl.pageItems) : [];
+              if (items.length === 0) {
+                rl.remove();
+              }
+            } catch (_) {}
+          }
+        }
+
         report.details.push("Enforced layer stratification from layout plan.");
       } catch (err: any) {
         if (options.failurePolicy === "strict") throw err;
@@ -356,24 +392,46 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           masterSpreadsMap[mPlan.prefix] = foundMaster;
         }
 
-        // Cleanup: remove unused empty default "A-Master" or "A-Parent"
+        // Cleanup unused blank master spreads (e.g. D-Parent, E-Parent... or any empty unmapped master spread)
         if (!options.dryRun) {
-          const currentMasters = doc.masterSpreads.everyItem
+          const freshMasters = doc.masterSpreads.everyItem
             ? doc.masterSpreads.everyItem().getElements()
             : [];
-          for (let m = currentMasters.length - 1; m >= 0; m--) {
-            const cm = currentMasters[m];
-            if (
-              cm.isValid &&
-              !adoptedMasterIds.has(cm.id || cm) &&
-              (cm.name === "A-Master" || cm.name === "A-Parent")
-            ) {
-              const items = cm.pageItems
-                ? cm.pageItems.everyItem ? cm.pageItems.everyItem().getElements() : cm.pageItems
-                : [];
-              if (items.length === 0) {
-                try { cm.remove(); } catch (_) {}
+          const validNames = new Set(["A-Cover", "B-Content", "C-Back"]);
+          const docPages = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
+
+          for (let m = freshMasters.length - 1; m >= 0; m--) {
+            const cm = freshMasters[m];
+            if (!cm || !cm.isValid || validNames.has(cm.name)) continue;
+
+            let hasItems = false;
+            const spItems = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : (cm.pageItems || []);
+            if (spItems.length > 0) hasItems = true;
+            if (!hasItems && cm.pages) {
+              const mPages = cm.pages.everyItem ? cm.pages.everyItem().getElements() : cm.pages;
+              for (let p = 0; p < mPages.length; p++) {
+                if (mPages[p]?.pageItems && (mPages[p].pageItems.everyItem ? mPages[p].pageItems.everyItem().getElements().length > 0 : mPages[p].pageItems.length > 0)) {
+                  hasItems = true;
+                  break;
+                }
               }
+            }
+
+            let isUsed = false;
+            for (let p = 0; p < docPages.length; p++) {
+              if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
+                isUsed = true;
+                break;
+              }
+            }
+
+            if (!hasItems || !isUsed || (cm.name && cm.name.match(/^[A-Z]-(?:Parent|Master)$/i))) {
+              for (let p = 0; p < docPages.length; p++) {
+                if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
+                  try { docPages[p].appliedMaster = (p === 0 ? masterSpreadsMap["A"] : masterSpreadsMap["B"]); } catch (_) {}
+                }
+              }
+              try { cm.remove(); } catch (_) {}
             }
           }
         }
@@ -519,14 +577,18 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 }
 
                 try {
-                  const rect = pageEl.rectangles.add({
-                    label: deco.label,
-                    name: deco.name,
-                    geometricBounds: deco.geometricBounds,
-                    itemLayer: dLayer
-                  });
+                  let rect: any = null;
+                  try {
+                    rect = dLayer && dLayer.isValid ? pageEl.rectangles.add(dLayer) : pageEl.rectangles.add();
+                  } catch (_) {
+                    try { rect = pageEl.rectangles.add(); } catch (_) {}
+                  }
 
                   if (rect && rect.isValid) {
+                    if (dLayer && dLayer.isValid) try { rect.itemLayer = dLayer; } catch (_) {}
+                    if (deco.geometricBounds) try { rect.geometricBounds = deco.geometricBounds; } catch (_) {}
+                    if (deco.name) try { rect.name = deco.name; } catch (_) {}
+                    if (deco.label) try { rect.label = deco.label; } catch (_) {}
                     rect.strokeWeight = deco.strokeWeight || 0;
                     if (fillTarget) {
                       rect.fillColor = fillTarget;
@@ -600,14 +662,18 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 }
 
                 try {
-                  const tfFolio = pageEl.textFrames.add({
-                    label: folio.label,
-                    name: folio.name,
-                    geometricBounds: folio.geometricBounds,
-                    itemLayer: fLayer
-                  });
+                  let tfFolio: any = null;
+                  try {
+                    tfFolio = fLayer && fLayer.isValid ? pageEl.textFrames.add(fLayer) : pageEl.textFrames.add();
+                  } catch (_) {
+                    try { tfFolio = pageEl.textFrames.add(); } catch (_) {}
+                  }
 
                   if (tfFolio && tfFolio.isValid) {
+                    if (fLayer && fLayer.isValid) try { tfFolio.itemLayer = fLayer; } catch (_) {}
+                    if (folio.geometricBounds) try { tfFolio.geometricBounds = folio.geometricBounds; } catch (_) {}
+                    if (folio.name) try { tfFolio.name = folio.name; } catch (_) {}
+                    if (folio.label) try { tfFolio.label = folio.label; } catch (_) {}
                     tfFolio.strokeWeight = 0;
                     if (doc.swatches) {
                       const swatchNone = doc.swatches.item("None")?.isValid

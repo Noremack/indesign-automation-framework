@@ -143,32 +143,39 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     }
 
     // 4. Create Specimen Text Frame
-    let tf: any;
+    let tf: any = null;
     try {
-      tf = targetPage.textFrames.add({
-        itemLayer: targetLayer,
-        geometricBounds: [top, left, bottom, right]
-      });
-      tf.label = dynamicLabel;
-      tf.name = specimenName;
+      try {
+        tf = targetLayer && targetLayer.isValid ? targetPage.textFrames.add(targetLayer) : targetPage.textFrames.add();
+      } catch (_) {
+        tf = targetPage.textFrames.add();
+      }
+      if (tf && tf.isValid) {
+        if (targetLayer && targetLayer.isValid) try { tf.itemLayer = targetLayer; } catch (_) {}
+        try { tf.geometricBounds = [top, left, bottom, right]; } catch (_) {}
+        tf.label = dynamicLabel;
+        tf.name = specimenName;
 
-      // Configure multi-column layout for wider formats
-      if (tf.textFramePreferences) {
-        if (pageWidth > 500) {
-          tf.textFramePreferences.textColumnCount = 2;
-        } else {
-          tf.textFramePreferences.textColumnCount = 1;
+        // Configure multi-column layout for wider formats
+        if (tf.textFramePreferences) {
+          if (pageWidth > 500) {
+            tf.textFramePreferences.textColumnCount = 2;
+          } else {
+            tf.textFramePreferences.textColumnCount = 1;
+          }
         }
-      }
 
-      // Clear stroke and fill
-      const swNone = doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None");
-      if (swNone && swNone.isValid) {
-        tf.fillColor = swNone;
-        tf.strokeColor = swNone;
+        // Clear stroke and fill
+        const swNone = doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None");
+        if (swNone && swNone.isValid) {
+          tf.fillColor = swNone;
+          tf.strokeColor = swNone;
+        }
+        tf.strokeWeight = 0;
+        report.specimenFramesCreated++;
+      } else {
+        throw new Error("Unable to create text frame proxy.");
       }
-      tf.strokeWeight = 0;
-      report.specimenFramesCreated++;
     } catch (err: any) {
       if (options.failurePolicy === "strict") throw err;
       report.skippedCount++;

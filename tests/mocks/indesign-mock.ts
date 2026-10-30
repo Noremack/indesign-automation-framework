@@ -102,9 +102,19 @@ export class MockLayer {
   public name = "Layer 1";
   public visible = true;
   public locked = false;
+  public pageItems = new MockCollection<any>([]);
 
   constructor(props: Partial<MockLayer> = {}) {
     Object.assign(this, props);
+  }
+
+  public move(_to?: any, _reference?: any) {}
+
+  public remove() {
+    if ((this as any).parentCollection) {
+      (this as any).parentCollection.removeItem(this);
+    }
+    this.isValid = false;
   }
 }
 
@@ -930,6 +940,13 @@ export const SaveOptions = {
   ASK: 1634954091
 };
 
+export const LocationOptions = {
+  BEFORE: 1650812527,
+  AFTER: 1634104421,
+  AT_BEGINNING: 1635017319,
+  AT_END: 1635018094
+};
+
 export default {
   app,
   mockApp,
@@ -940,5 +957,6 @@ export default {
   ColorModel,
   ColorSpace,
   NothingEnum,
-  SaveOptions
+  SaveOptions,
+  LocationOptions
 };

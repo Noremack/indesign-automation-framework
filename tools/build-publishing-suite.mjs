@@ -498,9 +498,9 @@ const fullDomResolver = `class DomResolver {
 
 // Replace DomResolver and inject BrandThemeAdapter + LayoutPlanner
 const adapterAndPlannerBlock = `
-class ThemeValidationError extends Error {
+class QgdsThemeValidationError extends Error {
     constructor(missingFields) {
-        super("[ThemeValidationError] Tenant brand package is missing required tokens: " + missingFields.join(", "));
+        super("[ThemeValidationError] Tenant brand package is missing required tokens: " + (Array.isArray(missingFields) ? missingFields.join(", ") : String(missingFields)));
         this.name = "ThemeValidationError";
         this.missingFields = missingFields;
     }
@@ -523,7 +523,7 @@ class BrandThemeAdapter {
         }
         if (!Array.isArray(this.pkg.swatches) || this.pkg.swatches.length === 0) missing.push("swatches (non-empty array)");
         if (!this.pkg.themeMatrices || Object.keys(this.pkg.themeMatrices).length === 0) missing.push("themeMatrices (non-empty dictionary)");
-        if (missing.length > 0) throw new ThemeValidationError(missing);
+        if (missing.length > 0) throw new QgdsThemeValidationError(missing);
     }
     get package() { return this.pkg; }
     get manifest() { return this.pkg.manifest; }
@@ -1113,16 +1113,16 @@ class QgdsLayoutEngineService extends BaseService {
             details: []
         };
 
-        // 1. Layer Stratification (Enforce official 3-layer architecture and clean legacy layers)
+        // 1. Layer Stratification (Enforce official 3-layer architecture: Foreground on top, Cover Options in middle, Background at bottom)
         if (options.enforceStratification !== false && doc.layers) {
             try {
                 const layerDefs = [
-                    { name: "Foreground", aliases: ["Foreground", "Layer 1", "Artwork / Content", "Content"] },
+                    { name: "Background", aliases: ["Background", "Layer 2"] },
                     { name: "Master: expand for cover options", aliases: ["Master: expand for cover options", "Brand Assets / Badges", "Headers & Footers", "Cover Options"] },
-                    { name: "Background", aliases: ["Background", "Layer 2"] }
+                    { name: "Foreground", aliases: ["Foreground", "Layer 1", "Artwork / Content", "Content"] }
                 ];
                 const docLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : [];
-                for (let i = layerDefs.length - 1; i >= 0; i--) {
+                for (let i = 0; i < layerDefs.length; i++) {
                     const lDef = layerDefs[i];
                     let targetLayer = null;
                     for (let j = 0; j < docLayers.length; j++) {
@@ -1151,12 +1151,29 @@ class QgdsLayoutEngineService extends BaseService {
                         targetLayer.locked = false;
                         targetLayer.visible = true;
                     } catch (_) {}
-                    if (lDef.name === "Background") {
-                        try { targetLayer.move(1699021422); } catch (_) {} // LocationOptions.AT_END
-                    } else if (lDef.name === "Foreground" && doc.layers.length > 0) {
-                        try { targetLayer.move(1696236390, doc.layers[0]); } catch (_) {} // LocationOptions.BEFORE
-                    }
                 }
+
+                // Explicitly enforce Z-index stacking order: Foreground (index 0, top), Cover Options (index 1), Background (index 2, bottom)
+                const LocOpts = (typeof indesign !== "undefined" && indesign && indesign.LocationOptions)
+                    ? indesign.LocationOptions
+                    : (typeof LocationOptions !== "undefined" ? LocationOptions : null);
+                const locBefore = LocOpts ? LocOpts.BEFORE : 1650812527; // FourCC 'befo'
+                const locAfter = LocOpts ? LocOpts.AFTER : 1634104421;   // FourCC 'afte'
+
+                const fg = doc.layers.itemByName ? doc.layers.itemByName("Foreground") : null;
+                const cov = doc.layers.itemByName ? doc.layers.itemByName("Master: expand for cover options") : null;
+                const bg = doc.layers.itemByName ? doc.layers.itemByName("Background") : null;
+
+                if (fg && fg.isValid && doc.layers.length > 0 && doc.layers[0] !== fg) {
+                    try { fg.move(locBefore, doc.layers[0]); } catch (_) {}
+                }
+                if (cov && cov.isValid && fg && fg.isValid) {
+                    try { cov.move(locAfter, fg); } catch (_) {}
+                }
+                if (bg && bg.isValid && cov && cov.isValid) {
+                    try { bg.move(locAfter, cov); } catch (_) {}
+                }
+
                 // Clean up any remaining empty unused layers that aren't the 3 official layers
                 const remainingLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : [];
                 const officialNames = ["Foreground", "Master: expand for cover options", "Background"];
@@ -1317,15 +1334,50 @@ class QgdsLayoutEngineService extends BaseService {
                     if (req.prefix === "C") cBackMaster = foundMaster;
                 }
 
-                // Cleanup unused empty default "A-Master" / "A-Parent"
+                // Cleanup unused blank master spreads (e.g. D-Parent, E-Parent, ... or any empty unmapped master spread)
                 if (!options.dryRun) {
-                    for (let m = currentMasters.length - 1; m >= 0; m--) {
-                        const cm = currentMasters[m];
-                        if (cm.isValid && !adoptedMasterIds.has(cm.id || cm) && (cm.name === "A-Master" || cm.name === "A-Parent")) {
-                            const items = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : cm.pageItems || [];
-                            if (items.length === 0) {
-                                try { cm.remove(); } catch (_) {}
+                    const freshMasters = doc.masterSpreads ? (doc.masterSpreads.everyItem ? doc.masterSpreads.everyItem().getElements() : doc.masterSpreads) : [];
+                    const validNames = new Set(["A-Cover", "B-Content", "C-Back"]);
+                    for (let m = freshMasters.length - 1; m >= 0; m--) {
+                        const cm = freshMasters[m];
+                        if (!cm || !cm.isValid) continue;
+                        if (validNames.has(cm.name)) continue;
+
+                        // Check if master spread has items on its spread or pages
+                        let hasItems = false;
+                        const spItems = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : (cm.pageItems || []);
+                        if (spItems.length > 0) hasItems = true;
+                        if (!hasItems && cm.pages) {
+                            const mPages = cm.pages.everyItem ? cm.pages.everyItem().getElements() : cm.pages;
+                            for (let p = 0; p < mPages.length; p++) {
+                                if (mPages[p]?.pageItems && (mPages[p].pageItems.everyItem ? mPages[p].pageItems.everyItem().getElements().length > 0 : mPages[p].pageItems.length > 0)) {
+                                    hasItems = true;
+                                    break;
+                                }
                             }
+                        }
+
+                        // Check if any document page is currently using this master spread
+                        let isUsed = false;
+                        const docPages = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
+                        for (let p = 0; p < docPages.length; p++) {
+                            if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
+                                isUsed = true;
+                                break;
+                            }
+                        }
+
+                        // If it's a default Parent/Master (e.g. D-Parent, E-Parent... or A-Parent) or has no user items and is not used:
+                        if (!hasItems || !isUsed || cm.name.match(/^[A-Z]-(?:Parent|Master)$/i)) {
+                            // Remap any document pages using it to aCoverMaster or bContentMaster before removing
+                            for (let p = 0; p < docPages.length; p++) {
+                                if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
+                                    try { docPages[p].appliedMaster = (p === 0 ? aCoverMaster : bContentMaster); } catch (_) {}
+                                }
+                            }
+                            try {
+                                cm.remove();
+                            } catch (_) {}
                         }
                     }
                 }
@@ -1413,169 +1465,186 @@ class QgdsLayoutEngineService extends BaseService {
                 const pWidthPt = metrics.shortEdge / PT_TO_MM;
                 const pHeightPt = metrics.longEdge / PT_TO_MM;
 
-                // A-Cover: Brand bar - Small & Cover Footer Banner
-                if (aCoverMaster && aCoverMaster.isValid && aCoverMaster.pages) {
-                    const cp = aCoverMaster.pages[0];
-                    if (cp && cp.isValid && cp.rectangles) {
-                        const bounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
-                        const pw = Math.abs(bounds[3] - bounds[1]);
-                        const ph = Math.abs(bounds[2] - bounds[0]);
-                        const scaledH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+                function safeAddRect(targetParent, layer, bounds, name, label) {
+                    let r = null;
+                    try {
+                        r = (layer && layer.isValid) ? targetParent.rectangles.add(layer) : targetParent.rectangles.add();
+                    } catch (_) {
+                        try { r = targetParent.rectangles.add(); } catch (_) {}
+                    }
+                    if (r && r.isValid) {
+                        if (layer && layer.isValid) { try { r.itemLayer = layer; } catch (_) {} }
+                        if (bounds) { try { r.geometricBounds = bounds; } catch (_) {} }
+                        if (name) { try { r.name = name; } catch (_) {} }
+                        if (label) { try { r.label = label; } catch (_) {} }
+                    }
+                    return r;
+                }
 
-                        const barRect = cp.rectangles.add({
-                            label: "DynamicBrandHeader",
-                            name: "Brand bar - Small",
-                            geometricBounds: [-bleedPt, -bleedPt, scaledH, pw - baseMarginPt],
-                            itemLayer: coverLayer
-                        });
-                        if (barRect && barRect.isValid) {
-                            barRect.strokeWeight = 0;
-                            if (fillTarget) barRect.fillColor = fillTarget;
-                            if (doc.swatches) {
-                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                if (swNone && swNone.isValid) barRect.strokeColor = swNone;
+                function safeAddTF(targetParent, layer, bounds, name, label) {
+                    let f = null;
+                    try {
+                        f = (layer && layer.isValid) ? targetParent.textFrames.add(layer) : targetParent.textFrames.add();
+                    } catch (_) {
+                        try { f = targetParent.textFrames.add(); } catch (_) {}
+                    }
+                    if (f && f.isValid) {
+                        if (layer && layer.isValid) { try { f.itemLayer = layer; } catch (_) {} }
+                        if (bounds) { try { f.geometricBounds = bounds; } catch (_) {} }
+                        if (name) { try { f.name = name; } catch (_) {} }
+                        if (label) { try { f.label = label; } catch (_) {} }
+                    }
+                    return f;
+                }
+
+                // A-Cover: Brand bar - Small & Cover Footer Banner
+                try {
+                    if (aCoverMaster && aCoverMaster.isValid && aCoverMaster.pages) {
+                        const cp = aCoverMaster.pages[0];
+                        if (cp && cp.isValid && cp.rectangles) {
+                            const bounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
+                            const pw = Math.abs(bounds[3] - bounds[1]);
+                            const ph = Math.abs(bounds[2] - bounds[0]);
+                            const scaledH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
+
+                            const barRect = safeAddRect(cp, coverLayer, [-bleedPt, -bleedPt, scaledH, pw - baseMarginPt], "Brand bar - Small", "DynamicBrandHeader");
+                            if (barRect && barRect.isValid) {
+                                barRect.strokeWeight = 0;
+                                if (fillTarget) barRect.fillColor = fillTarget;
+                                if (doc.swatches) {
+                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                    if (swNone && swNone.isValid) barRect.strokeColor = swNone;
+                                }
+                                const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Bottom Right", "Frames - Radius Large");
+                                if (objStyle && objStyle.isValid) {
+                                    try { barRect.appliedObjectStyle = objStyle; } catch (_) {}
+                                } else {
+                                    if (barRect.bottomRightCornerOption !== undefined) {
+                                        barRect.bottomRightCornerOption = 1852797549;
+                                        barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
+                                    }
+                                }
                             }
-                            const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Bottom Right", "Frames - Radius Large");
-                            if (objStyle && objStyle.isValid) {
-                                try { barRect.appliedObjectStyle = objStyle; } catch (_) {}
-                            } else {
-                                if (barRect.bottomRightCornerOption !== undefined) {
-                                    barRect.bottomRightCornerOption = 1852797549;
-                                    barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
+
+                            const scaledFootH = Math.max(35, ph * 0.10);
+                            const footRect = safeAddRect(cp, coverLayer, [ph - scaledFootH, -bleedPt, ph + bleedPt, pw + bleedPt], "Cover Footer Banner", "DynamicBrandFooter");
+                            if (footRect && footRect.isValid) {
+                                footRect.strokeWeight = 0;
+                                if (fillTarget) footRect.fillColor = fillTarget;
+                                if (doc.swatches) {
+                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                    if (swNone && swNone.isValid) footRect.strokeColor = swNone;
                                 }
                             }
                         }
-
-                        const scaledFootH = Math.max(35, ph * 0.10);
-                        const footRect = cp.rectangles.add({
-                            label: "DynamicBrandFooter",
-                            name: "Cover Footer Banner",
-                            geometricBounds: [ph - scaledFootH, -bleedPt, ph + bleedPt, pw + bleedPt],
-                            itemLayer: coverLayer
-                        });
-                        if (footRect && footRect.isValid) {
-                            footRect.strokeWeight = 0;
-                            if (fillTarget) footRect.fillColor = fillTarget;
-                            if (doc.swatches) {
-                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                if (swNone && swNone.isValid) footRect.strokeColor = swNone;
-                            }
-                        }
                     }
+                } catch (coverErr) {
+                    report.details.push("Cover decorations failed: " + (coverErr && coverErr.message ? coverErr.message : String(coverErr)));
                 }
 
                 // C-Back: Back Cover Background
-                if (cBackMaster && cBackMaster.isValid && cBackMaster.pages) {
-                    const bp = cBackMaster.pages[0];
-                    if (bp && bp.isValid && bp.rectangles) {
-                        const bounds = bp.bounds || [0, 0, pHeightPt, pWidthPt];
-                        const pw = Math.abs(bounds[3] - bounds[1]);
-                        const ph = Math.abs(bounds[2] - bounds[0]);
-                        const scaledBackH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
+                try {
+                    if (cBackMaster && cBackMaster.isValid && cBackMaster.pages) {
+                        const bp = cBackMaster.pages[0];
+                        if (bp && bp.isValid && bp.rectangles) {
+                            const bounds = bp.bounds || [0, 0, pHeightPt, pWidthPt];
+                            const pw = Math.abs(bounds[3] - bounds[1]);
+                            const ph = Math.abs(bounds[2] - bounds[0]);
+                            const scaledBackH = Math.max(30, (19 / PT_TO_MM) * scalingFactor);
 
-                        const backRect = bp.rectangles.add({
-                            label: "DynamicBrandBackCover",
-                            name: "Back Cover Background",
-                            geometricBounds: [ph - scaledBackH, baseMarginPt, ph + bleedPt, pw + bleedPt],
-                            itemLayer: coverLayer
-                        });
-                        if (backRect && backRect.isValid) {
-                            backRect.strokeWeight = 0;
-                            if (fillTarget) backRect.fillColor = fillTarget;
-                            if (doc.swatches) {
-                                const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
-                                if (swNone && swNone.isValid) backRect.strokeColor = swNone;
-                            }
-                            const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Top Left", "Frames - Radius Large");
-                            if (objStyle && objStyle.isValid) {
-                                try { backRect.appliedObjectStyle = objStyle; } catch (_) {}
-                            } else {
-                                if (backRect.topLeftCornerOption !== undefined) {
-                                    backRect.topLeftCornerOption = 1852797549;
-                                    backRect.topLeftCornerRadius = 22.68 * scalingFactor;
+                            const backRect = safeAddRect(bp, coverLayer, [ph - scaledBackH, baseMarginPt, ph + bleedPt, pw + bleedPt], "Back Cover Background", "DynamicBrandBackCover");
+                            if (backRect && backRect.isValid) {
+                                backRect.strokeWeight = 0;
+                                if (fillTarget) backRect.fillColor = fillTarget;
+                                if (doc.swatches) {
+                                    const swNone = doc.swatches.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches.item("[None]");
+                                    if (swNone && swNone.isValid) backRect.strokeColor = swNone;
+                                }
+                                const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Top Left", "Frames - Radius Large");
+                                if (objStyle && objStyle.isValid) {
+                                    try { backRect.appliedObjectStyle = objStyle; } catch (_) {}
+                                } else {
+                                    if (backRect.topLeftCornerOption !== undefined) {
+                                        backRect.topLeftCornerOption = 1852797549;
+                                        backRect.topLeftCornerRadius = 22.68 * scalingFactor;
+                                    }
                                 }
                             }
                         }
                     }
+                } catch (backErr) {
+                    report.details.push("Back cover decoration failed: " + (backErr && backErr.message ? backErr.message : String(backErr)));
                 }
 
                 // B-Content: Running Folios
-                if (options.injectFooters !== false && bContentMaster && bContentMaster.isValid) {
-                    const cPages = bContentMaster.pages?.everyItem ? bContentMaster.pages.everyItem().getElements() : [];
-                    const pubTitle = options.publicationTitle || (doc.name ? String(doc.name).replace(/\\.[^.]+$/, "") : "Queensland Government Publication");
-                    const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers") || DomResolver.getParagraphStyleSafely(doc, "Footer");
-                    const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character") || DomResolver.getCharacterStyleSafely(doc, "Bold");
+                try {
+                    if (options.injectFooters !== false && bContentMaster && bContentMaster.isValid) {
+                        const cPages = bContentMaster.pages?.everyItem ? bContentMaster.pages.everyItem().getElements() : [];
+                        const pubTitle = options.publicationTitle || (doc.name ? String(doc.name).replace(/\.[^.]+$/, "") : "Queensland Government Publication");
+                        const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers") || DomResolver.getParagraphStyleSafely(doc, "Footer");
+                        const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character") || DomResolver.getCharacterStyleSafely(doc, "Bold");
 
-                    for (let cpIdx = 0; cpIdx < cPages.length; cpIdx++) {
-                        const cp = cPages[cpIdx];
-                        if (!cp || !cp.isValid || !cp.textFrames) continue;
-                        if (cp.textFrames.everyItem) {
-                            const tfs = cp.textFrames.everyItem().getElements();
-                            for (let ti = tfs.length - 1; ti >= 0; ti--) {
-                                if (tfs[ti].label === "DynamicContentFooter" || tfs[ti].label === "DynamicBrandFooter" || tfs[ti].name === "Running Folio" || tfs[ti].name === "DynamicBrandFooter" || (tfs[ti].name && tfs[ti].name.indexOf("Content Footer") === 0)) {
-                                    try { tfs[ti].remove(); } catch (_) {}
+                        for (let cpIdx = 0; cpIdx < cPages.length; cpIdx++) {
+                            const cp = cPages[cpIdx];
+                            if (!cp || !cp.isValid || !cp.textFrames) continue;
+                            if (cp.textFrames.everyItem) {
+                                const tfs = cp.textFrames.everyItem().getElements();
+                                for (let ti = tfs.length - 1; ti >= 0; ti--) {
+                                    if (tfs[ti].label === "DynamicContentFooter" || tfs[ti].label === "DynamicBrandFooter" || tfs[ti].name === "Running Folio" || tfs[ti].name === "DynamicBrandFooter" || (tfs[ti].name && tfs[ti].name.indexOf("Content Footer") === 0)) {
+                                        try { tfs[ti].remove(); } catch (_) {}
+                                    }
                                 }
                             }
-                        }
-                        const pageBounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
-                        const pw = Math.abs(pageBounds[3] - pageBounds[1]);
-                        const ph = Math.abs(pageBounds[2] - pageBounds[0]);
-                        const footerY1 = ph - baseMarginPt;
-                        const footerY2 = ph - Math.max(10, baseMarginPt / 2);
-                        const isLeft = cpIdx === 0 && cPages.length > 1;
-                        const liveW = pw - 2 * baseMarginPt;
+                            const pageBounds = cp.bounds || [0, 0, pHeightPt, pWidthPt];
+                            const pw = Math.abs(pageBounds[3] - pageBounds[1]);
+                            const ph = Math.abs(pageBounds[2] - pageBounds[0]);
+                            const footerY1 = ph - baseMarginPt;
+                            const footerY2 = ph - Math.max(10, baseMarginPt / 2);
+                            const isLeft = cpIdx === 0 && cPages.length > 1;
+                            const liveW = pw - 2 * baseMarginPt;
 
-                        if (isLeft) {
-                            const tfNum = cp.textFrames.add({
-                                label: "DynamicContentFooter",
-                                name: "Content Footer - Page Number",
-                                geometricBounds: [footerY1, baseMarginPt, footerY2, baseMarginPt + liveW * 0.2],
-                                itemLayer: fgLayer
-                            });
-                            const tfTitle = cp.textFrames.add({
-                                label: "DynamicContentFooter",
-                                name: "Content Footer - Document Title",
-                                geometricBounds: [footerY1, baseMarginPt + liveW * 0.25, footerY2, pw - baseMarginPt],
-                                itemLayer: fgLayer
-                            });
-                            try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
-                            try { tfTitle.contents = pubTitle; } catch (_) {}
-                            if (tfNum.texts && tfNum.texts[0]) {
-                                if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
-                                tfNum.texts[0].justification = 1818584692;
-                                if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
+                            if (isLeft) {
+                                const tfNum = safeAddTF(cp, fgLayer, [footerY1, baseMarginPt, footerY2, baseMarginPt + liveW * 0.2], "Content Footer - Page Number", "DynamicContentFooter");
+                                const tfTitle = safeAddTF(cp, fgLayer, [footerY1, baseMarginPt + liveW * 0.25, footerY2, pw - baseMarginPt], "Content Footer - Document Title", "DynamicContentFooter");
+                                if (tfNum && tfNum.isValid) {
+                                    try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
+                                    if (tfNum.texts && tfNum.texts[0]) {
+                                        if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
+                                        tfNum.texts[0].justification = 1818584692;
+                                        if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
+                                    }
+                                }
+                                if (tfTitle && tfTitle.isValid) {
+                                    try { tfTitle.contents = pubTitle; } catch (_) {}
+                                    if (tfTitle.texts && tfTitle.texts[0]) {
+                                        if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
+                                        tfTitle.texts[0].justification = 1919379572;
+                                    }
+                                }
+                            } else {
+                                const tfTitle = safeAddTF(cp, fgLayer, [footerY1, baseMarginPt, footerY2, pw - baseMarginPt - liveW * 0.25], "Content Footer - Document Title", "DynamicContentFooter");
+                                const tfNum = safeAddTF(cp, fgLayer, [footerY1, pw - baseMarginPt - liveW * 0.2, footerY2, pw - baseMarginPt], "Content Footer - Page Number", "DynamicContentFooter");
+                                if (tfTitle && tfTitle.isValid) {
+                                    try { tfTitle.contents = pubTitle; } catch (_) {}
+                                    if (tfTitle.texts && tfTitle.texts[0]) {
+                                        if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
+                                        tfTitle.texts[0].justification = 1818584692;
+                                    }
+                                }
+                                if (tfNum && tfNum.isValid) {
+                                    try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
+                                    if (tfNum.texts && tfNum.texts[0]) {
+                                        if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
+                                        tfNum.texts[0].justification = 1919379572;
+                                        if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
+                                    }
+                                }
                             }
-                            if (tfTitle.texts && tfTitle.texts[0]) {
-                                if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
-                                tfTitle.texts[0].justification = 1919379572;
-                            }
-                        } else {
-                            const tfTitle = cp.textFrames.add({
-                                label: "DynamicContentFooter",
-                                name: "Content Footer - Document Title",
-                                geometricBounds: [footerY1, baseMarginPt, footerY2, pw - baseMarginPt - liveW * 0.25],
-                                itemLayer: fgLayer
-                            });
-                            const tfNum = cp.textFrames.add({
-                                label: "DynamicContentFooter",
-                                name: "Content Footer - Page Number",
-                                geometricBounds: [footerY1, pw - baseMarginPt - liveW * 0.2, footerY2, pw - baseMarginPt],
-                                itemLayer: fgLayer
-                            });
-                            try { tfTitle.contents = pubTitle; } catch (_) {}
-                            try { tfNum.contents = String.fromCharCode(0x0018); } catch (_) {}
-                            if (tfTitle.texts && tfTitle.texts[0]) {
-                                if (footerStyle && footerStyle.isValid) tfTitle.texts[0].appliedParagraphStyle = footerStyle;
-                                tfTitle.texts[0].justification = 1818584692;
-                            }
-                            if (tfNum.texts && tfNum.texts[0]) {
-                                if (footerStyle && footerStyle.isValid) tfNum.texts[0].appliedParagraphStyle = footerStyle;
-                                tfNum.texts[0].justification = 1919379572;
-                                if (boldStyle && boldStyle.isValid) tfNum.texts[0].appliedCharacterStyle = boldStyle;
-                            }
+                            report.footersInjected++;
                         }
-                        report.footersInjected++;
                     }
+                } catch (folioErr) {
+                    report.details.push("Content footers failed: " + (folioErr && folioErr.message ? folioErr.message : String(folioErr)));
                 }
 
                 // Ensure Page 1 is mapped to A-Cover
@@ -1802,12 +1871,17 @@ class QgdsSpecimenService extends BaseService {
 
         if (bottom <= top || options.dryRun) return report;
 
-        let tf;
+        let tf = null;
         try {
-            tf = targetPage.textFrames.add({
-                itemLayer: targetLayer,
-                geometricBounds: [top, left, bottom, right]
-            });
+            tf = (targetLayer && targetLayer.isValid) ? targetPage.textFrames.add(targetLayer) : targetPage.textFrames.add();
+        } catch (_) {
+            try { tf = targetPage.textFrames.add(); } catch (_) {}
+        }
+        if (tf && tf.isValid) {
+            if (targetLayer && targetLayer.isValid) {
+                try { tf.itemLayer = targetLayer; } catch (_) {}
+            }
+            try { tf.geometricBounds = [top, left, bottom, right]; } catch (_) {}
             tf.label = "DynamicBrandSpecimen";
             tf.name = "Typography Specimen";
             if (tf.textFramePreferences) {
@@ -1815,12 +1889,12 @@ class QgdsSpecimenService extends BaseService {
             }
             const swNone = doc.swatches ? (doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None")) : null;
             if (swNone && swNone.isValid) {
-                tf.fillColor = swNone;
-                tf.strokeColor = swNone;
+                try { tf.fillColor = swNone; } catch (_) {}
+                try { tf.strokeColor = swNone; } catch (_) {}
             }
             tf.strokeWeight = 0;
             report.specimenFramesCreated++;
-        } catch (err) {
+        } else {
             report.skippedCount++;
             return report;
         }
@@ -1904,23 +1978,31 @@ class QgdsSpecimenService extends BaseService {
                     const npLeft = p2B[1] + m;
                     const npRight = p2B[3] - m;
                     if (npBottom > npTop + 30) {
-                        const nextTf = p2.textFrames.add({
-                            itemLayer: targetLayer,
-                            geometricBounds: [npTop, npLeft, npBottom, npRight]
-                        });
-                        nextTf.label = "DynamicBrandSpecimen";
-                        nextTf.name = "Typography Specimen";
-                        if (nextTf.textFramePreferences) {
-                            nextTf.textFramePreferences.textColumnCount = pageWidth > 500 ? 2 : 1;
+                        let nextTf = null;
+                        try {
+                            nextTf = (targetLayer && targetLayer.isValid) ? p2.textFrames.add(targetLayer) : p2.textFrames.add();
+                        } catch (_) {
+                            try { nextTf = p2.textFrames.add(); } catch (_) {}
                         }
-                        const swNone = doc.swatches ? (doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None")) : null;
-                        if (swNone && swNone.isValid) {
-                            nextTf.fillColor = swNone;
-                            nextTf.strokeColor = swNone;
+                        if (nextTf && nextTf.isValid) {
+                            if (targetLayer && targetLayer.isValid) {
+                                try { nextTf.itemLayer = targetLayer; } catch (_) {}
+                            }
+                            try { nextTf.geometricBounds = [npTop, npLeft, npBottom, npRight]; } catch (_) {}
+                            nextTf.label = "DynamicBrandSpecimen";
+                            nextTf.name = "Typography Specimen";
+                            if (nextTf.textFramePreferences) {
+                                nextTf.textFramePreferences.textColumnCount = pageWidth > 500 ? 2 : 1;
+                            }
+                            const swNone = doc.swatches ? (doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None")) : null;
+                            if (swNone && swNone.isValid) {
+                                try { nextTf.fillColor = swNone; } catch (_) {}
+                                try { nextTf.strokeColor = swNone; } catch (_) {}
+                            }
+                            nextTf.strokeWeight = 0;
+                            try { tf.nextTextFrame = nextTf; } catch (_) {}
+                            report.specimenFramesCreated++;
                         }
-                        nextTf.strokeWeight = 0;
-                        tf.nextTextFrame = nextTf;
-                        report.specimenFramesCreated++;
                     }
                 }
             }
