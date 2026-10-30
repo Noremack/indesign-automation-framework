@@ -1,7 +1,8 @@
 import { app } from "indesign";
 import { ServiceResult, BaseBatchOptions, FrameworkError } from "./types";
 import { runInTransaction } from "./transaction";
-import { withNormalizedUnits } from "./app-state";
+import { withNormalizedUnits, isElementEditable } from "./app-state";
+export { isElementEditable };
 
 export abstract class BaseService<TOptions extends BaseBatchOptions, TReport> {
   protected abstract readonly actionName: string;

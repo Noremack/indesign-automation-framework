@@ -27,7 +27,7 @@ export interface SpecimenReport {
  * and design system component archetypes into target InDesign pages.
  */
 export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenReport> {
-  protected actionName = "Typography Specimen & Component Archetype Injection";
+  public override readonly actionName = "QGDS Typography Specimen & Component Archetype Injection";
 
   protected process(doc: any, options: SpecimenOptions): SpecimenReport {
     doc.recompose();

@@ -46,7 +46,7 @@
     "lint:invariants": "node tools/lint-invariants.mjs",
     "dev": "rollup -c --watch --environment TARGET:script",
     "build:script": "rollup -c --environment TARGET:script",
-    "build:suite": "node tools/build-publishing-suite.mjs",
+    "build:suite": "rollup -c --environment TARGET:suite",
     "build:plugin": "rollup -c --environment TARGET:plugin",
     "build:lib": "rollup -c --environment TARGET:lib",
     "build": "rollup -c",

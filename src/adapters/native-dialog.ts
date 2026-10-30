@@ -109,7 +109,7 @@ export class NativeDialog {
           runReset: false,
           runLayout: true,
           runBrand: true,
-          runSpecimen: false,
+          runSpecimen: true,
           runEditorial: true,
           runPreflight: true,
           runExport: true,
@@ -245,7 +245,7 @@ export class NativeDialog {
       const r2Specimen = p2Col.dialogRows.add();
       const cbSpecimen = r2Specimen.checkboxControls.add({
         staticLabel: "3. Specimen & Archetypes (Inject typography specimen & accessible tables into Page 1)",
-        checkedState: false
+        checkedState: true
       });
 
       const r2Editorial = p2Col.dialogRows.add();
@@ -373,7 +373,7 @@ export class NativeDialog {
         runReset: false,
         runLayout: true,
         runBrand: true,
-        runSpecimen: false,
+        runSpecimen: true,
         runEditorial: true,
         runPreflight: true,
         runExport: true,

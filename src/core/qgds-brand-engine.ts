@@ -105,7 +105,7 @@ export interface BrandEngineReport {
 }
 
 export class QgdsBrandEngineService extends BaseService<BrandEngineOptions, BrandEngineReport> {
-  protected actionName = "Brand Engine & Theme Styler";
+  public override readonly actionName = "QGDS Brand Engine & Theme Styler";
 
   protected process(doc: any, options: BrandEngineOptions): BrandEngineReport {
     const adapter = options.adapter;

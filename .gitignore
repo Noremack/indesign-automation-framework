@@ -28,3 +28,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local Test Data & Examples
+example-indesign/
+Deliverables/
+QGDS_Deliverables/

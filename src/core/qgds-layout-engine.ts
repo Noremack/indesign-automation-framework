@@ -21,6 +21,7 @@ export interface PageFormatMetrics {
 }
 
 export interface LayoutEngineOptions extends BaseBatchOptions {
+  theme?: string;
   adapter?: BrandThemeAdapter;
   formatOverride?: string;
   marginOverrideMm?: number;
@@ -550,7 +551,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
     // 7. Inject Brand Decorations & Folios from Plan
     if (!options.dryRun) {
       try {
-        const themeName = options.adapter?.defaultTheme || "Blue";
+        const themeName = options.theme || options.adapter?.defaultTheme || "Blue";
         const gradientName = `${themeName} - Gradient`;
         const themeGrad = doc.gradients?.itemByName ? doc.gradients.itemByName(gradientName) : null;
         const themeColor = doc.colors?.itemByName
