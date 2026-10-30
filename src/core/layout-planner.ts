@@ -41,6 +41,19 @@ export interface FolioPlan {
   isAutoPageNumber?: boolean;
 }
 
+export interface MasterEditorialFramePlan {
+  name: string;
+  label: string;
+  layerName: string;
+  geometricBounds: [number, number, number, number]; // [top, left, bottom, right] in points
+  contents: string;
+  paragraphStyleName: string;
+  characterStyleName?: string;
+  characterRange?: [number, number];
+  justification?: number;
+  verticalJustification?: number;
+}
+
 export interface MasterSpreadPlan {
   prefix: string;
   baseName: string;
@@ -52,6 +65,7 @@ export interface MasterSpreadPlan {
   gutterMm: number;
   folios: FolioPlan[];
   decorations: MasterDecorationPlan[];
+  editorialFrames?: MasterEditorialFramePlan[];
 }
 
 export interface PageRemapPlan {
@@ -211,6 +225,7 @@ export class LayoutPlanner {
 
       const decorations: MasterDecorationPlan[] = [];
       const folios: FolioPlan[] = [];
+      const editorialFrames: MasterEditorialFramePlan[] = [];
 
       if (isCover) {
         // 1. Cover Header: Brand bar - Small
@@ -252,6 +267,20 @@ export class LayoutPlanner {
           topLeftCornerOption: 1852797549, // ROUNDED_CORNER
           topLeftCornerRadius: 22.68 * scalingFactor,
           visible: true
+        });
+
+        // Back Cover Element: Editorial Contact Details Text Frame
+        editorialFrames.push({
+          name: "Back Cover Text",
+          label: "DynamicBrandBackCover",
+          layerName: brandLayer,
+          geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
+          contents: "13 QGOV (137468)\r\nwww.tmr.qld.gov.au | www.qld.gov.au",
+          paragraphStyleName: "Footer Reverse",
+          characterStyleName: "Bold Reverse",
+          characterRange: [0, 15],
+          justification: 1919379572, // Justification.RIGHT_ALIGN
+          verticalJustification: 1667591796 // VerticalJustification.CENTER_ALIGN
         });
       }
 
@@ -323,7 +352,8 @@ export class LayoutPlanner {
         },
         gutterMm,
         folios,
-        decorations
+        decorations,
+        editorialFrames
       };
     });
 

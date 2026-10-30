@@ -632,6 +632,90 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             }
           }
 
+          // 7a2. Inject Master Editorial Text Frames (e.g. Back Cover Contact Text)
+          if (options.injectDecorations !== false && mPlan.editorialFrames && mPlan.editorialFrames.length > 0) {
+            const pageEl = mPages.length > 0 ? mPages[0] : ms;
+            const targetParent = (pageEl && pageEl.textFrames && typeof pageEl.textFrames.add === "function") ? pageEl : ms;
+
+            for (const edFrame of mPlan.editorialFrames) {
+              let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(edFrame.layerName) : null;
+              if (!dLayer || !dLayer.isValid) {
+                dLayer = doc.layers ? doc.layers[0] : null;
+              }
+              if (dLayer && dLayer.isValid) dLayer.locked = false;
+
+              // Purge existing text frames with same label or name
+              const tfContainer = targetParent.textFrames || ms.textFrames;
+              if (tfContainer && tfContainer.everyItem) {
+                const tfs = tfContainer.everyItem().getElements();
+                for (let ti = tfs.length - 1; ti >= 0; ti--) {
+                  if (tfs[ti].label === edFrame.label || tfs[ti].name === edFrame.name) {
+                    try { tfs[ti].remove(); } catch (_) {}
+                  }
+                }
+              }
+
+              try {
+                let tf: any = null;
+                if (targetParent.textFrames && typeof targetParent.textFrames.add === "function") {
+                  try { tf = targetParent.textFrames.add(); } catch (_) {}
+                  if (!tf) { try { tf = targetParent.textFrames.add({}); } catch (_) {} }
+                }
+                if (!tf && ms.textFrames && typeof ms.textFrames.add === "function") {
+                  try { tf = ms.textFrames.add(); } catch (_) {}
+                  if (!tf) { try { tf = ms.textFrames.add({}); } catch (_) {} }
+                }
+
+                if (tf && tf.isValid) {
+                  if (dLayer && dLayer.isValid) try { tf.itemLayer = dLayer; } catch (_) {}
+                  if (edFrame.geometricBounds) try { tf.geometricBounds = edFrame.geometricBounds; } catch (_) {}
+                  if (edFrame.name) try { tf.name = edFrame.name; } catch (_) {}
+                  if (edFrame.label) try { tf.label = edFrame.label; } catch (_) {}
+                  tf.strokeWeight = 0;
+
+                  if (doc.swatches) {
+                    const swatchNone = doc.swatches.item("None")?.isValid
+                      ? doc.swatches.item("None")
+                      : doc.swatches.item("[None]");
+                    if (swatchNone && swatchNone.isValid) {
+                      try {
+                        tf.fillColor = swatchNone;
+                        tf.strokeColor = swatchNone;
+                      } catch (_) {}
+                    }
+                  }
+
+                  if (edFrame.verticalJustification && tf.textFramePreferences) {
+                    try { tf.textFramePreferences.verticalJustification = edFrame.verticalJustification; } catch (_) {}
+                  }
+
+                  try { tf.contents = edFrame.contents; } catch (_) {}
+
+                  if (tf.texts && tf.texts.length > 0) {
+                    const pStyle = DomResolver.getParagraphStyleSafely(doc, edFrame.paragraphStyleName, "Reverse") ||
+                                   DomResolver.getParagraphStyleSafely(doc, edFrame.paragraphStyleName);
+                    if (pStyle && pStyle.isValid) {
+                      try { tf.texts[0].appliedParagraphStyle = pStyle; } catch (_) {}
+                    }
+                    if (edFrame.justification && tf.texts[0].justification !== undefined) {
+                      try { tf.texts[0].justification = edFrame.justification; } catch (_) {}
+                    }
+                    if (edFrame.characterStyleName && edFrame.characterRange) {
+                      const cStyle = DomResolver.getCharacterStyleSafely(doc, edFrame.characterStyleName, "Reverse") ||
+                                     DomResolver.getCharacterStyleSafely(doc, edFrame.characterStyleName);
+                      if (cStyle && cStyle.isValid && tf.texts[0].characters) {
+                        try {
+                          tf.texts[0].characters.itemByRange(edFrame.characterRange[0], edFrame.characterRange[1]).appliedCharacterStyle = cStyle;
+                        } catch (_) {}
+                      }
+                    }
+                  }
+                  report.details.push(`Injected master editorial frame "${edFrame.name}" on ${ms.name}.`);
+                }
+              } catch (_) {}
+            }
+          }
+
           // 7b. Inject Running Folios (B-Content left & right pages)
           if (options.injectFooters !== false && mPlan.folios && mPlan.folios.length > 0) {
             const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers");

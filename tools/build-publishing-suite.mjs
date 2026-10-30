@@ -668,6 +668,7 @@ class LayoutPlanner {
 
             const decorations = [];
             const folios = [];
+            const editorialFrames = [];
 
             if (isCover) {
                 const scaledHeaderH = Math.max(25, (12 / PT_TO_MM) * scalingFactor);
@@ -706,6 +707,18 @@ class LayoutPlanner {
                     topLeftCornerOption: 1852797549,
                     topLeftCornerRadius: 22.68 * scalingFactor,
                     visible: true
+                });
+                editorialFrames.push({
+                    name: "Back Cover Text",
+                    label: "DynamicBrandBackCover",
+                    layerName: brandLayer,
+                    geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
+                    contents: "13 QGOV (137468)\\r\\nwww.tmr.qld.gov.au | www.qld.gov.au",
+                    paragraphStyleName: "Footer Reverse",
+                    characterStyleName: "Bold Reverse",
+                    characterRange: [0, 15],
+                    justification: 1919379572,
+                    verticalJustification: 1667591796
                 });
             }
 
@@ -772,7 +785,8 @@ class LayoutPlanner {
                 marginsPt: { top: topM / PT_TO_MM, bottom: botM / PT_TO_MM, left: marginPt, right: marginPt },
                 gutterMm,
                 folios,
-                decorations
+                decorations,
+                editorialFrames
             };
         });
 
@@ -1568,6 +1582,34 @@ class QgdsLayoutEngineService extends BaseService {
                                 const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
                                 if (swNone && swNone.isValid) footRect.strokeColor = swNone;
                             } catch (_) {}
+
+                            // Attempt to place and embed authentic vector footer asset from standard asset paths
+                            try {
+                                const assetPaths = [
+                                    "C:/Work/SVG/footer-A4-portrait-with-margin-Q.svg",
+                                    "C:/Work/AI/footer-A4-portrait-with-margin-Q.ai",
+                                    "C:/Work/SVG/footer-A4-landscape-with-margin-Q.svg",
+                                    "C:/Work/AI/footer-A4-landscape-with-margin-Q.ai",
+                                    "C:/Work/_footers-with-margins.ai",
+                                    "C:/Work/_footers.ai"
+                                ];
+                                for (let a = 0; a < assetPaths.length; a++) {
+                                    try {
+                                        footRect.place(assetPaths[a]);
+                                        if (typeof footRect.fit === "function") {
+                                            footRect.fit(1667591780); // FitOptions.PROPORTIONALLY
+                                        }
+                                        if (footRect.frameFittingOptions) {
+                                            footRect.frameFittingOptions.fittingAlignment = 1651471465; // AnchorPoint.BOTTOM_CENTER_ANCHOR
+                                        }
+                                        if (footRect.graphics && footRect.graphics.length > 0 && footRect.graphics[0].itemLink) {
+                                            try { footRect.graphics[0].itemLink.unlink(); } catch (_) {}
+                                        }
+                                        break;
+                                    } catch (_) {}
+                                }
+                            } catch (_) {}
+
                             report.details.push("Injected 'Cover Footer Banner' on A-Cover.");
                         } else {
                             report.details.push("Failed to create 'Cover Footer Banner' on A-Cover.");
@@ -1577,7 +1619,7 @@ class QgdsLayoutEngineService extends BaseService {
                     report.details.push("Cover decorations failed: " + (coverErr && coverErr.message ? coverErr.message : String(coverErr)));
                 }
 
-                // C-Back: Back Cover Background
+                // C-Back: Back Cover Background & Editorial Contact Text
                 try {
                     if (cBackMaster && cBackMaster.isValid) {
                         const mPages = cBackMaster.pages ? (cBackMaster.pages.everyItem ? cBackMaster.pages.everyItem().getElements() : cBackMaster.pages) : [];
@@ -1614,6 +1656,45 @@ class QgdsLayoutEngineService extends BaseService {
                             report.details.push("Injected 'Back Cover Background' on C-Back.");
                         } else {
                             report.details.push("Failed to create 'Back Cover Background' on C-Back.");
+                        }
+
+                        // Back Cover Editorial Contact Details
+                        const backTf = safeAddTF(backTargetParent, fgLayer, backBounds, "Back Cover Text", "DynamicBrandBackCover");
+                        if (backTf && backTf.isValid) {
+                            try { backTf.strokeWeight = 0; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) {
+                                    backTf.strokeColor = swNone;
+                                    backTf.fillColor = swNone;
+                                }
+                            } catch (_) {}
+                            try {
+                                if (backTf.textFramePreferences) {
+                                    backTf.textFramePreferences.verticalJustification = 1667591796; // CENTER_ALIGN
+                                }
+                            } catch (_) {}
+                            try {
+                                backTf.contents = "13 QGOV (137468)\\r\\nwww.tmr.qld.gov.au | www.qld.gov.au";
+                            } catch (_) {}
+                            if (backTf.texts && backTf.texts.length > 0) {
+                                const pStyle = DomResolver.getParagraphStyleSafely(doc, "Footer Reverse", "Reverse") ||
+                                               DomResolver.getParagraphStyleSafely(doc, "Footer Reverse") ||
+                                               DomResolver.getParagraphStyleSafely(doc, "Footer");
+                                if (pStyle && pStyle.isValid) {
+                                    try { backTf.texts[0].appliedParagraphStyle = pStyle; } catch (_) {}
+                                }
+                                try { backTf.texts[0].justification = 1919379572; } catch (_) {} // RIGHT_ALIGN
+                                const cStyle = DomResolver.getCharacterStyleSafely(doc, "Bold Reverse", "Reverse") ||
+                                               DomResolver.getCharacterStyleSafely(doc, "Bold Reverse") ||
+                                               DomResolver.getCharacterStyleSafely(doc, "Bold");
+                                if (cStyle && cStyle.isValid && backTf.texts[0].characters) {
+                                    try {
+                                        backTf.texts[0].characters.itemByRange(0, 15).appliedCharacterStyle = cStyle;
+                                    } catch (_) {}
+                                }
+                            }
+                            report.details.push("Injected 'Back Cover Text' on C-Back.");
                         }
                     }
                 } catch (backErr) {
@@ -1916,10 +1997,15 @@ class QgdsSpecimenService extends BaseService {
         if (bottom <= top || options.dryRun) return report;
 
         let tf = null;
-        try {
-            tf = (targetLayer && targetLayer.isValid) ? targetPage.textFrames.add(targetLayer) : targetPage.textFrames.add();
-        } catch (_) {
+        if (targetPage.textFrames && typeof targetPage.textFrames.add === "function") {
             try { tf = targetPage.textFrames.add(); } catch (_) {}
+            if (!tf) { try { tf = targetPage.textFrames.add({}); } catch (_) {} }
+            if (!tf && targetLayer && targetLayer.isValid) { try { tf = targetPage.textFrames.add(targetLayer); } catch (_) {} }
+        }
+        if (!tf && targetPage.parent && targetPage.parent.textFrames && typeof targetPage.parent.textFrames.add === "function") {
+            try { tf = targetPage.parent.textFrames.add(); } catch (_) {}
+            if (!tf) { try { tf = targetPage.parent.textFrames.add({}); } catch (_) {} }
+            if (!tf && targetLayer && targetLayer.isValid) { try { tf = targetPage.parent.textFrames.add(targetLayer); } catch (_) {} }
         }
         if (tf && tf.isValid) {
             if (targetLayer && targetLayer.isValid) {
@@ -2230,7 +2316,7 @@ const comprehensiveDashboardAndMain = `function showNativePublishingDashboard(do
                 runReset: false,
                 runLayout: true,
                 runBrand: true,
-                runSpecimen: false,
+                runSpecimen: true,
                 runEditorial: true,
                 runPreflight: true,
                 runExport: true,
@@ -2497,7 +2583,7 @@ const comprehensiveDashboardAndMain = `function showNativePublishingDashboard(do
             runReset: false,
             runLayout: true,
             runBrand: true,
-            runSpecimen: false,
+            runSpecimen: true,
             runEditorial: true,
             runPreflight: true,
             runExport: true,
