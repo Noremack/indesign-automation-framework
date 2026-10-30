@@ -402,11 +402,11 @@ export const QGDS_BRAND_TOKENS = {
   },
   "layerMatrix": [
     {
-      "name": "Foreground",
-      "color": "BLUE",
+      "name": "Background",
+      "color": "GREEN",
       "aliases": [
-        "Foreground",
-        "Layer 1"
+        "Background",
+        "Layer 2"
       ]
     },
     {
@@ -415,11 +415,11 @@ export const QGDS_BRAND_TOKENS = {
       "aliases": []
     },
     {
-      "name": "Background",
-      "color": "GREEN",
+      "name": "Foreground",
+      "color": "BLUE",
       "aliases": [
-        "Background",
-        "Layer 2"
+        "Foreground",
+        "Layer 1"
       ]
     }
   ],

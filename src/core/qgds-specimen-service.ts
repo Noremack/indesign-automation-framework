@@ -145,10 +145,16 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     // 4. Create Specimen Text Frame
     let tf: any = null;
     try {
-      try {
-        tf = targetLayer && targetLayer.isValid ? targetPage.textFrames.add(targetLayer) : targetPage.textFrames.add();
-      } catch (_) {
-        tf = targetPage.textFrames.add();
+      if (targetLayer && targetLayer.isValid) {
+        try { targetLayer.locked = false; targetLayer.visible = true; } catch (_) {}
+      }
+      if (targetPage.textFrames && typeof targetPage.textFrames.add === "function") {
+        try { tf = targetPage.textFrames.add(); } catch (_) {}
+        if (!tf) { try { tf = targetPage.textFrames.add({}); } catch (_) {} }
+      }
+      if (!tf && targetPage.parent && targetPage.parent.textFrames && typeof targetPage.parent.textFrames.add === "function") {
+        try { tf = targetPage.parent.textFrames.add(); } catch (_) {}
+        if (!tf) { try { tf = targetPage.parent.textFrames.add({}); } catch (_) {} }
       }
       if (tf && tf.isValid) {
         if (targetLayer && targetLayer.isValid) try { tf.itemLayer = targetLayer; } catch (_) {}
@@ -357,10 +363,16 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
       const calloutLeft = pB[1] + 50;
       const calloutRight = pB[3] - 50;
 
-      const calloutFrame = page.textFrames.add({
-        itemLayer: layer,
-        geometricBounds: [calloutTop, calloutLeft, calloutBottom, calloutRight]
-      });
+      let calloutFrame: any = null;
+      try { calloutFrame = page.textFrames.add(); } catch (_) {
+        try { calloutFrame = page.textFrames.add({}); } catch (_) {}
+      }
+      if (!calloutFrame || !calloutFrame.isValid) return;
+
+      if (layer && layer.isValid) {
+        try { calloutFrame.itemLayer = layer; } catch (_) {}
+      }
+      calloutFrame.geometricBounds = [calloutTop, calloutLeft, calloutBottom, calloutRight];
       calloutFrame.label = adapter ? `${adapter.tenantId}_BrandComponent` : "DynamicBrandComponent";
       calloutFrame.name = "Component Archetype - Callout";
       calloutFrame.contents = "Important Advisory Notice\rAll projects must undergo environmental and accessibility certification before publication.\r";

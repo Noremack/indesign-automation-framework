@@ -176,7 +176,23 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
     // 3. Layer Stratification Execution
     if (options.enforceStratification !== false && doc.layers) {
       try {
-        for (const req of plan.layers) {
+        // Unlock all existing layers first
+        const allLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : doc.layers;
+        for (let l = 0; l < allLayers.length; l++) {
+          try {
+            allLayers[l].locked = false;
+            allLayers[l].visible = true;
+          } catch (_) {}
+        }
+
+        // Create layers in Background -> Master -> Foreground order so Foreground sits on top
+        const orderedLayerDefs = [
+          { name: "Background", color: "GREEN" },
+          { name: "Master: expand for cover options", color: "RED" },
+          { name: "Foreground", color: "BLUE" }
+        ];
+
+        for (const req of orderedLayerDefs) {
           const l = DomResolver.getOrCreateLayer(doc, req.name);
           if (l && l.isValid) {
             try {
@@ -186,22 +202,23 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           }
         }
 
-        // Explicitly enforce Z-index stacking order: Foreground (index 0, top), Cover Options (index 1), Background (index 2, bottom)
-        const locBefore = LocationOptions?.BEFORE || 1650812527; // 'befo'
-        const locAfter = LocationOptions?.AFTER || 1634104421;   // 'afte'
-
+        // Explicitly enforce Z-index stacking order: Foreground (top), Cover Options (middle), Background (bottom)
         const fg = doc.layers.itemByName ? doc.layers.itemByName("Foreground") : null;
         const cov = doc.layers.itemByName ? doc.layers.itemByName("Master: expand for cover options") : null;
         const bg = doc.layers.itemByName ? doc.layers.itemByName("Background") : null;
 
-        if (fg && fg.isValid && doc.layers.length > 0 && doc.layers[0] !== fg) {
-          try { fg.move(locBefore, doc.layers[0]); } catch (_) {}
+        if (fg && fg.isValid) {
+          try { (fg as any).move(1634101602); } catch (_) { // AT_BEGINNING
+            try { if (doc.layers.length > 0 && doc.layers[0] !== fg) (fg as any).move(1650812527, doc.layers[0]); } catch (_) {}
+          }
+        }
+        if (bg && bg.isValid) {
+          try { (bg as any).move(1634101614); } catch (_) { // AT_END
+            try { if (doc.layers.length > 0 && doc.layers[doc.layers.length - 1] !== bg) (bg as any).move(1634104421, doc.layers[doc.layers.length - 1]); } catch (_) {}
+          }
         }
         if (cov && cov.isValid && fg && fg.isValid) {
-          try { cov.move(locAfter, fg); } catch (_) {}
-        }
-        if (bg && bg.isValid && cov && cov.isValid) {
-          try { bg.move(locAfter, cov); } catch (_) {}
+          try { (cov as any).move(1634104421, fg); } catch (_) {} // AFTER fg
         }
 
         // Clean up remaining empty unused layers that aren't the 3 official layers
@@ -232,6 +249,12 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
     if (options.createMasters !== false && doc.masterSpreads) {
       try {
+        // Detach all document pages from masters first to unlock master spread structure
+        const docPagesInitial = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
+        for (let p = 0; p < docPagesInitial.length; p++) {
+          try { docPagesInitial[p].appliedMaster = null; } catch (_) {}
+        }
+
         const adoptedMasterIds = new Set<any>();
 
         for (const mPlan of plan.masterPlans) {
@@ -341,19 +364,26 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           if (foundMaster && foundMaster.isValid) {
             adoptedMasterIds.add(foundMaster.id || foundMaster);
 
-            // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (Remove first verso page until single recto remains)
+            // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (remove left/verso page in facing pages)
             if (mPlan.isSinglePage && !options.dryRun && foundMaster.pages) {
-              try {
-                while (foundMaster.pages.length > 1) {
-                  if (typeof foundMaster.pages.firstItem === "function" && foundMaster.pages.firstItem().isValid) {
-                    foundMaster.pages.firstItem().remove();
-                  } else if (foundMaster.pages[0] && foundMaster.pages[0].isValid) {
-                    foundMaster.pages[0].remove();
-                  } else {
-                    break;
-                  }
+              let mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
+              while (mPages.length > 1) {
+                try {
+                  mPages[0].remove();
+                  mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
+                } catch (_) {
+                  try {
+                    const freshSingle = doc.masterSpreads.add(1);
+                    if (freshSingle && freshSingle.isValid) {
+                      try { foundMaster.remove(); } catch (_) {}
+                      freshSingle.namePrefix = mPlan.prefix;
+                      freshSingle.baseName = mPlan.baseName;
+                      foundMaster = freshSingle;
+                    }
+                  } catch (_) {}
+                  break;
                 }
-              } catch (_) {}
+              }
             }
 
             // Purge existing items on master pages if cleanMasters is enabled
@@ -397,42 +427,29 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           const freshMasters = doc.masterSpreads.everyItem
             ? doc.masterSpreads.everyItem().getElements()
             : [];
-          const validNames = new Set(["A-Cover", "B-Content", "C-Back"]);
+          const validPrefixes = new Set(["A", "B", "C"]);
           const docPages = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
 
           for (let m = freshMasters.length - 1; m >= 0; m--) {
             const cm = freshMasters[m];
-            if (!cm || !cm.isValid || validNames.has(cm.name)) continue;
+            if (!cm || !cm.isValid || validPrefixes.has(cm.namePrefix) || cm.name === "A-Cover" || cm.name === "B-Content" || cm.name === "C-Back") continue;
 
-            let hasItems = false;
-            const spItems = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : (cm.pageItems || []);
-            if (spItems.length > 0) hasItems = true;
-            if (!hasItems && cm.pages) {
-              const mPages = cm.pages.everyItem ? cm.pages.everyItem().getElements() : cm.pages;
-              for (let p = 0; p < mPages.length; p++) {
-                if (mPages[p]?.pageItems && (mPages[p].pageItems.everyItem ? mPages[p].pageItems.everyItem().getElements().length > 0 : mPages[p].pageItems.length > 0)) {
-                  hasItems = true;
-                  break;
-                }
-              }
-            }
-
-            let isUsed = false;
+            // Reassign any document pages using cm before removing
             for (let p = 0; p < docPages.length; p++) {
-              if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
-                isUsed = true;
-                break;
+              const dp = docPages[p];
+              if (dp?.isValid) {
+                const curId = dp.appliedMaster ? (dp.appliedMaster.id || dp.appliedMaster.name) : null;
+                if (curId && (curId === cm.id || curId === cm.name)) {
+                  try { dp.appliedMaster = (p === 0 ? masterSpreadsMap["A"] : masterSpreadsMap["B"]); } catch (_) {}
+                }
               }
             }
 
-            if (!hasItems || !isUsed || (cm.name && cm.name.match(/^[A-Z]-(?:Parent|Master)$/i))) {
-              for (let p = 0; p < docPages.length; p++) {
-                if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
-                  try { docPages[p].appliedMaster = (p === 0 ? masterSpreadsMap["A"] : masterSpreadsMap["B"]); } catch (_) {}
-                }
-              }
-              try { cm.remove(); } catch (_) {}
-            }
+            try { (cm as any).appliedMaster = null; } catch (_) {}
+            try {
+              cm.remove();
+              report.details.push(`Removed unused master spread "${cm.name}".`);
+            } catch (_) {}
           }
         }
 
@@ -553,7 +570,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
           // 7a. Inject Master Brand Decorations (Brand bars, Cover footer banner, Back cover background)
           if (options.injectDecorations !== false && mPlan.decorations && mPlan.decorations.length > 0) {
-            const pageEl = mPages.length > 0 ? mPages[0] : ms;
+            const pageEl = (mPlan.prefix === "A" && mPages.length > 1) ? mPages[mPages.length - 1] : (mPages.length > 0 ? mPages[0] : ms);
             const targetParent = (pageEl && pageEl.rectangles && typeof pageEl.rectangles.add === "function") ? pageEl : ms;
 
             for (const deco of mPlan.decorations) {
@@ -595,15 +612,15 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                   if (deco.geometricBounds) try { rect.geometricBounds = deco.geometricBounds; } catch (_) {}
                   if (deco.name) try { rect.name = deco.name; } catch (_) {}
                   if (deco.label) try { rect.label = deco.label; } catch (_) {}
-                  rect.strokeWeight = deco.strokeWeight || 0;
-                  if (fillTarget) {
-                    try { rect.fillColor = fillTarget; } catch (_) {}
-                  }
-                  if (doc.swatches) {
-                    const swatchNone = doc.swatches.item("None")?.isValid
-                      ? doc.swatches.item("None")
-                      : doc.swatches.item("[None]");
-                    if (swatchNone && swatchNone.isValid) try { rect.strokeColor = swatchNone; } catch (_) {}
+
+                  // Apply object style FIRST before explicit fill/stroke assignments
+                  if (deco.objectStyleName) {
+                    try {
+                      const objStyle = DomResolver.getObjectStyleSafely(doc, deco.objectStyleName, deco.objectStyleGroup);
+                      if (objStyle && objStyle.isValid) {
+                        rect.appliedObjectStyle = objStyle;
+                      }
+                    } catch (_) {}
                   }
 
                   if (deco.bottomRightCornerOption && rect.bottomRightCornerOption !== undefined) {
@@ -619,13 +636,15 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     } catch (_) {}
                   }
 
-                  if (deco.objectStyleName) {
-                    try {
-                      const objStyle = DomResolver.getObjectStyleSafely(doc, deco.objectStyleName, deco.objectStyleGroup);
-                      if (objStyle && objStyle.isValid) {
-                        rect.appliedObjectStyle = objStyle;
-                      }
-                    } catch (_) {}
+                  rect.strokeWeight = deco.strokeWeight || 0;
+                  if (fillTarget) {
+                    try { rect.fillColor = fillTarget; } catch (_) {}
+                  }
+                  if (doc.swatches) {
+                    const swatchNone = doc.swatches.item("None")?.isValid
+                      ? doc.swatches.item("None")
+                      : doc.swatches.item("[None]");
+                    if (swatchNone && swatchNone.isValid) try { rect.strokeColor = swatchNone; } catch (_) {}
                   }
                 }
               } catch (_) {}

@@ -102,6 +102,33 @@ if (content.startsWith("(function () {")) {
     content = content.replace(/^\(function \(\) \{\s*(?:'use strict';\s*)?/, "'use strict';\n").replace(/\n\}\)\(\);\s*$/, "");
 }
 
+// Enhance StandardLogger with synchronous execution logging to disk
+const persistentLoggerBlock = `class StandardLogger {
+    constructor(prefix = "[Framework]") {
+        this.prefix = prefix;
+    }
+    _write(level, message, contextOrError) {
+        const line = "[" + new Date().toISOString() + "] [" + this.prefix + "] [" + level + "] " + message +
+            (contextOrError ? " " + (contextOrError.stack || (typeof contextOrError === "object" ? JSON.stringify(contextOrError) : String(contextOrError))) : "");
+        try {
+            if (level === "ERROR") console.error(line);
+            else if (level === "WARN") console.warn(line);
+            else console.log(line);
+        } catch (_) {}
+        try {
+            if (fs && typeof fs.appendFileSync === "function") {
+                fs.appendFileSync("C:/Work/InDesign Scripts/publishing-suite-execution.log", line + "\\n");
+            }
+        } catch (_) {}
+    }
+    info(message, context) { this._write("INFO", message, context); }
+    warn(message, context) { this._write("WARN", message, context); }
+    error(message, error) { this._write("ERROR", message, error); }
+}`;
+
+content = content.replace(/class StandardLogger\s*\{[\s\S]*?\n\}/s, persistentLoggerBlock);
+
+
 // --- DomResolver Full Implementation ---
 const fullDomResolver = `class DomResolver {
     static cleanGroupPath(groupPath, namespacePrefix) {
@@ -1039,6 +1066,14 @@ const DEFAULT_QGDS_OBJECT_STYLES = ${JSON.stringify(fullObjectStyles, null, 4)};
 const DEFAULT_QGDS_SPECIMEN_STYLES = ${JSON.stringify(fullSpecimenStyles, null, 4)};
 `;
 
+// Update DEFAULT_QGDS_LAYERS to correct Background -> Master -> Foreground order so Foreground is on top
+const fixedDefaultLayersBlock = `const DEFAULT_QGDS_LAYERS = [
+    { name: "Background", color: "GREEN", aliases: ["Background", "Layer 2"] },
+    { name: "Master: expand for cover options", color: "RED", aliases: [] },
+    { name: "Foreground", color: "BLUE", aliases: ["Foreground", "Layer 1"] }
+];`;
+content = content.replace(/const DEFAULT_QGDS_LAYERS = \[[\s\S]*?\r?\n\];/s, fixedDefaultLayersBlock);
+
 // Remove duplicate downstream definition if present after DEFAULT_QGDS_LAYERS
 content = content.replace(/(const DEFAULT_QGDS_LAYERS = \[[\s\S]*?\r?\n\];)\s*const DEFAULT_QGDS_OBJECT_STYLES = \[[\s\S]*?\r?\n\];/s, "$1");
 
@@ -1130,6 +1165,16 @@ class QgdsLayoutEngineService extends BaseService {
         // 1. Layer Stratification (Enforce official 3-layer architecture: Foreground on top, Cover Options in middle, Background at bottom)
         if (options.enforceStratification !== false && doc.layers) {
             try {
+                // Unlock all document layers first
+                const allDocLayers = doc.layers.everyItem ? doc.layers.everyItem().getElements() : doc.layers;
+                for (let l = 0; l < allDocLayers.length; l++) {
+                    try {
+                        allDocLayers[l].locked = false;
+                        allDocLayers[l].visible = true;
+                    } catch (_) {}
+                }
+
+                // Create layers in Background -> Master -> Foreground order so Foreground sits on top
                 const layerDefs = [
                     { name: "Background", aliases: ["Background", "Layer 2"] },
                     { name: "Master: expand for cover options", aliases: ["Master: expand for cover options", "Brand Assets / Badges", "Headers & Footers", "Cover Options"] },
@@ -1168,24 +1213,22 @@ class QgdsLayoutEngineService extends BaseService {
                 }
 
                 // Explicitly enforce Z-index stacking order: Foreground (index 0, top), Cover Options (index 1), Background (index 2, bottom)
-                const LocOpts = (typeof indesign !== "undefined" && indesign && indesign.LocationOptions)
-                    ? indesign.LocationOptions
-                    : (typeof LocationOptions !== "undefined" ? LocationOptions : null);
-                const locBefore = LocOpts ? LocOpts.BEFORE : 1650812527; // FourCC 'befo'
-                const locAfter = LocOpts ? LocOpts.AFTER : 1634104421;   // FourCC 'afte'
-
                 const fg = doc.layers.itemByName ? doc.layers.itemByName("Foreground") : null;
                 const cov = doc.layers.itemByName ? doc.layers.itemByName("Master: expand for cover options") : null;
                 const bg = doc.layers.itemByName ? doc.layers.itemByName("Background") : null;
 
-                if (fg && fg.isValid && doc.layers.length > 0 && doc.layers[0] !== fg) {
-                    try { fg.move(locBefore, doc.layers[0]); } catch (_) {}
+                if (fg && fg.isValid) {
+                    try { fg.move(1634101602); } catch (_) { // AT_BEGINNING
+                        try { if (doc.layers.length > 0 && doc.layers[0] !== fg) fg.move(1650812527, doc.layers[0]); } catch (_) {}
+                    }
+                }
+                if (bg && bg.isValid) {
+                    try { bg.move(1634101614); } catch (_) { // AT_END
+                        try { if (doc.layers.length > 0 && doc.layers[doc.layers.length - 1] !== bg) bg.move(1634104421, doc.layers[doc.layers.length - 1]); } catch (_) {}
+                    }
                 }
                 if (cov && cov.isValid && fg && fg.isValid) {
-                    try { cov.move(locAfter, fg); } catch (_) {}
-                }
-                if (bg && bg.isValid && cov && cov.isValid) {
-                    try { bg.move(locAfter, cov); } catch (_) {}
+                    try { cov.move(1634104421, fg); } catch (_) {} // AFTER fg
                 }
 
                 // Clean up any remaining empty unused layers that aren't the 3 official layers
@@ -1214,6 +1257,12 @@ class QgdsLayoutEngineService extends BaseService {
 
         if (options.createMasters !== false && doc.masterSpreads) {
             try {
+                // Detach all document pages from masters first to unlock master spread structure
+                const docPagesInitial = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
+                for (let p = 0; p < docPagesInitial.length; p++) {
+                    try { docPagesInitial[p].appliedMaster = null; } catch (_) {}
+                }
+
                 const requiredMasters = [
                     { prefix: "A", baseName: "Cover", searchStr: "cover", aliases: ["a-master", "a-parent", "master a", "parent a"], isSinglePage: true },
                     { prefix: "B", baseName: "Content", searchStr: "content", aliases: ["b-master", "b-parent", "master b", "parent b"], isSinglePage: false },
@@ -1308,17 +1357,24 @@ class QgdsLayoutEngineService extends BaseService {
 
                         // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (remove left/verso page in facing pages)
                         if (req.isSinglePage && !options.dryRun && foundMaster.pages) {
-                            try {
-                                while (foundMaster.pages.length > 1) {
-                                    if (typeof foundMaster.pages.firstItem === "function" && foundMaster.pages.firstItem().isValid) {
-                                        foundMaster.pages.firstItem().remove();
-                                    } else if (foundMaster.pages[0] && foundMaster.pages[0].isValid) {
-                                        foundMaster.pages[0].remove();
-                                    } else {
-                                        break;
-                                    }
+                            let mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
+                            while (mPages.length > 1) {
+                                try {
+                                    mPages[0].remove();
+                                    mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
+                                } catch (_) {
+                                    try {
+                                        const freshSingle = doc.masterSpreads.add(1);
+                                        if (freshSingle && freshSingle.isValid) {
+                                            try { foundMaster.remove(); } catch (_) {}
+                                            freshSingle.namePrefix = req.prefix;
+                                            freshSingle.baseName = req.baseName;
+                                            foundMaster = freshSingle;
+                                        }
+                                    } catch (_) {}
+                                    break;
                                 }
-                            } catch (_) {}
+                            }
                         }
 
                         // Purge existing items if cleanMasters is enabled
@@ -1351,48 +1407,28 @@ class QgdsLayoutEngineService extends BaseService {
                 // Cleanup unused blank master spreads (e.g. D-Parent, E-Parent, ... or any empty unmapped master spread)
                 if (!options.dryRun) {
                     const freshMasters = doc.masterSpreads ? (doc.masterSpreads.everyItem ? doc.masterSpreads.everyItem().getElements() : doc.masterSpreads) : [];
-                    const validNames = new Set(["A-Cover", "B-Content", "C-Back"]);
+                    const validPrefixes = new Set(["A", "B", "C"]);
                     for (let m = freshMasters.length - 1; m >= 0; m--) {
                         const cm = freshMasters[m];
                         if (!cm || !cm.isValid) continue;
-                        if (validNames.has(cm.name)) continue;
+                        if (validPrefixes.has(cm.namePrefix) || cm.name === "A-Cover" || cm.name === "B-Content" || cm.name === "C-Back") continue;
 
-                        // Check if master spread has items on its spread or pages
-                        let hasItems = false;
-                        const spItems = cm.pageItems?.everyItem ? cm.pageItems.everyItem().getElements() : (cm.pageItems || []);
-                        if (spItems.length > 0) hasItems = true;
-                        if (!hasItems && cm.pages) {
-                            const mPages = cm.pages.everyItem ? cm.pages.everyItem().getElements() : cm.pages;
-                            for (let p = 0; p < mPages.length; p++) {
-                                if (mPages[p]?.pageItems && (mPages[p].pageItems.everyItem ? mPages[p].pageItems.everyItem().getElements().length > 0 : mPages[p].pageItems.length > 0)) {
-                                    hasItems = true;
-                                    break;
+                        // Reassign any document pages using cm before removing
+                        for (let p = 0; p < docPagesInitial.length; p++) {
+                            const dp = docPagesInitial[p];
+                            if (dp && dp.isValid) {
+                                const curId = dp.appliedMaster ? (dp.appliedMaster.id || dp.appliedMaster.name) : null;
+                                if (curId && (curId === cm.id || curId === cm.name)) {
+                                    try { dp.appliedMaster = (p === 0 ? aCoverMaster : bContentMaster); } catch (_) {}
                                 }
                             }
                         }
 
-                        // Check if any document page is currently using this master spread
-                        let isUsed = false;
-                        const docPages = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
-                        for (let p = 0; p < docPages.length; p++) {
-                            if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
-                                isUsed = true;
-                                break;
-                            }
-                        }
-
-                        // If it's a default Parent/Master (e.g. D-Parent, E-Parent... or A-Parent) or has no user items and is not used:
-                        if (!hasItems || !isUsed || cm.name.match(/^[A-Z]-(?:Parent|Master)$/i)) {
-                            // Remap any document pages using it to aCoverMaster or bContentMaster before removing
-                            for (let p = 0; p < docPages.length; p++) {
-                                if (docPages[p]?.isValid && docPages[p].appliedMaster === cm) {
-                                    try { docPages[p].appliedMaster = (p === 0 ? aCoverMaster : bContentMaster); } catch (_) {}
-                                }
-                            }
-                            try {
-                                cm.remove();
-                            } catch (_) {}
-                        }
+                        try { cm.appliedMaster = null; } catch (_) {}
+                        try {
+                            cm.remove();
+                            report.details.push("Removed unused master spread " + cm.name);
+                        } catch (_) {}
                     }
                 }
             } catch (err) {
@@ -1535,7 +1571,7 @@ class QgdsLayoutEngineService extends BaseService {
                 try {
                     if (aCoverMaster && aCoverMaster.isValid) {
                         const mPages = aCoverMaster.pages ? (aCoverMaster.pages.everyItem ? aCoverMaster.pages.everyItem().getElements() : aCoverMaster.pages) : [];
-                        const cp = mPages.length > 0 ? mPages[0] : aCoverMaster;
+                        const cp = mPages.length > 1 ? mPages[mPages.length - 1] : (mPages.length > 0 ? mPages[0] : aCoverMaster);
                         const targetParent = (cp && cp.rectangles && typeof cp.rectangles.add === "function") ? cp : aCoverMaster;
 
                         const rawBounds = (cp && (cp.bounds || cp.geometricBounds)) ? (cp.bounds || cp.geometricBounds) : null;
@@ -1551,12 +1587,6 @@ class QgdsLayoutEngineService extends BaseService {
                         const barBounds = [pageY - bleedPt, pageX - bleedPt, pageY + scaledH, pageX + pw - baseMarginPt];
                         const barRect = safeAddRect(targetParent, coverLayer, barBounds, "Brand bar - Small", "DynamicBrandHeader");
                         if (barRect && barRect.isValid) {
-                            try { barRect.strokeWeight = 0; } catch (_) {}
-                            try { if (fillTarget) barRect.fillColor = fillTarget; } catch (_) {}
-                            try {
-                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
-                                if (swNone && swNone.isValid) barRect.strokeColor = swNone;
-                            } catch (_) {}
                             try {
                                 const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Bottom Right", "Frames - Radius Large");
                                 if (objStyle && objStyle.isValid) {
@@ -1565,6 +1595,12 @@ class QgdsLayoutEngineService extends BaseService {
                                     barRect.bottomRightCornerOption = 1852797549; // ROUNDED_CORNER
                                     barRect.bottomRightCornerRadius = 22.68 * scalingFactor;
                                 }
+                            } catch (_) {}
+                            try { barRect.strokeWeight = 0; } catch (_) {}
+                            try { if (fillTarget) barRect.fillColor = fillTarget; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) barRect.strokeColor = swNone;
                             } catch (_) {}
                             report.details.push("Injected 'Brand bar - Small' on A-Cover.");
                         } else {
@@ -1638,12 +1674,6 @@ class QgdsLayoutEngineService extends BaseService {
                         const backBounds = [pageY + ph - scaledBackH, pageX + baseMarginPt, pageY + ph + bleedPt, pageX + pw + bleedPt];
                         const backRect = safeAddRect(backTargetParent, coverLayer, backBounds, "Back Cover Background", "DynamicBrandBackCover");
                         if (backRect && backRect.isValid) {
-                            try { backRect.strokeWeight = 0; } catch (_) {}
-                            try { if (fillTarget) backRect.fillColor = fillTarget; } catch (_) {}
-                            try {
-                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
-                                if (swNone && swNone.isValid) backRect.strokeColor = swNone;
-                            } catch (_) {}
                             try {
                                 const objStyle = DomResolver.getObjectStyleSafely(doc, "Medium - Rounded Top Left", "Frames - Radius Large");
                                 if (objStyle && objStyle.isValid) {
@@ -1652,6 +1682,12 @@ class QgdsLayoutEngineService extends BaseService {
                                     backRect.topLeftCornerOption = 1852797549; // ROUNDED_CORNER
                                     backRect.topLeftCornerRadius = 22.68 * scalingFactor;
                                 }
+                            } catch (_) {}
+                            try { backRect.strokeWeight = 0; } catch (_) {}
+                            try { if (fillTarget) backRect.fillColor = fillTarget; } catch (_) {}
+                            try {
+                                const swNone = doc.swatches?.item("None")?.isValid ? doc.swatches.item("None") : doc.swatches?.item("[None]");
+                                if (swNone && swNone.isValid) backRect.strokeColor = swNone;
                             } catch (_) {}
                             report.details.push("Injected 'Back Cover Background' on C-Back.");
                         } else {
@@ -1772,9 +1808,25 @@ class QgdsLayoutEngineService extends BaseService {
                     report.details.push("Content footers failed: " + (folioErr && folioErr.message ? folioErr.message : String(folioErr)));
                 }
 
-                // Ensure Page 1 is mapped to A-Cover
-                if (aCoverMaster && aCoverMaster.isValid && doc.pages && doc.pages.length > 0 && doc.pages[0].isValid) {
-                    try { doc.pages[0].appliedMaster = aCoverMaster; } catch (_) {}
+                // Remap all document pages to appropriate masters
+                if (doc.pages && doc.pages.length > 0) {
+                    const dPages = doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages;
+                    for (let p = 0; p < dPages.length; p++) {
+                        const dp = dPages[p];
+                        if (!dp || !dp.isValid) continue;
+                        try {
+                            if (p === 0 && aCoverMaster && aCoverMaster.isValid) {
+                                dp.appliedMaster = aCoverMaster;
+                                report.pagesRemapped++;
+                            } else if (p === dPages.length - 1 && dPages.length > 1 && cBackMaster && cBackMaster.isValid) {
+                                dp.appliedMaster = cBackMaster;
+                                report.pagesRemapped++;
+                            } else if (bContentMaster && bContentMaster.isValid) {
+                                dp.appliedMaster = bContentMaster;
+                                report.pagesRemapped++;
+                            }
+                        } catch (_) {}
+                    }
                 }
             } catch (err) {
                 if (options.failurePolicy === "strict") throw err;
@@ -2110,9 +2162,9 @@ class QgdsSpecimenService extends BaseService {
                     if (npBottom > npTop + 30) {
                         let nextTf = null;
                         try {
-                            nextTf = (targetLayer && targetLayer.isValid) ? p2.textFrames.add(targetLayer) : p2.textFrames.add();
+                            nextTf = p2.textFrames.add();
                         } catch (_) {
-                            try { nextTf = p2.textFrames.add(); } catch (_) {}
+                            try { nextTf = p2.textFrames.add({}); } catch (_) {}
                         }
                         if (nextTf && nextTf.isValid) {
                             if (targetLayer && targetLayer.isValid) {
@@ -2245,7 +2297,9 @@ class QgdsTemplateBuilderService extends BaseService {
 }
 `;
 
-if (!content.includes("class QgdsResetService")) {
+if (content.includes("class QgdsResetService")) {
+    content = content.replace(/class QgdsResetService extends BaseService[\s\S]*?(?=class QgdsPublishingPipelineService)/s, `${resetServiceBlock}\n${specimenServiceBlock}\n${templateBuilderBlock}\n`);
+} else {
     content = content.replace("class QgdsPublishingPipelineService", `${resetServiceBlock}\n${specimenServiceBlock}\n${templateBuilderBlock}\nclass QgdsPublishingPipelineService`);
 }
 
@@ -2785,7 +2839,8 @@ function main() {
             const specResult = specimenService.execute(doc, {
                 pageIndex: 0,
                 injectTables: true,
-                injectComponentArchetypes: true
+                injectComponentArchetypes: true,
+                dryRun: false
             });
             logger.info(\`Specimen injected into "\${doc.name}": \${specResult.data?.paragraphsFormatted || 0} paragraphs formatted, \${specResult.data?.tablesInjected || 0} tables injected.\`);
         }
