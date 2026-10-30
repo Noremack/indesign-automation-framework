@@ -146,7 +146,12 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
       publicationTitle: pubTitle,
       marginOverrideMm: options.marginOverrideMm,
       presets: QGDS_BRAND_TOKENS.pageMatrix as unknown as any[],
-      adapter: options.adapter
+      adapter: options.adapter,
+      layerNames: {
+        content: "Foreground",
+        headersFooters: "Foreground",
+        brandAssets: "Master: expand for cover options"
+      }
     });
 
     const report: LayoutEngineReport = {
@@ -188,9 +193,9 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
         // Create layers in Background -> Master -> Foreground order so Foreground sits on top
         const orderedLayerDefs = [
-          { name: "Background", color: "GREEN" },
-          { name: "Master: expand for cover options", color: "RED" },
-          { name: "Foreground", color: "BLUE" }
+          { name: "Background", color: 1651471717 }, // UIColors.GREEN
+          { name: "Master: expand for cover options", color: 1651470436 }, // UIColors.RED
+          { name: "Foreground", color: 1651471205 } // UIColors.BLUE
         ];
 
         for (const req of orderedLayerDefs) {
@@ -199,27 +204,54 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             try {
               l.locked = false;
               l.visible = true;
+              l.layerColor = req.color;
             } catch (_) {}
           }
         }
+
+        // LocationOptions FourCC: BEFORE = 1650812527, AFTER = 1634104421, AT_BEGINNING = 1635017319, AT_END = 1635018094
+        const locBefore = (typeof LocationOptions !== "undefined" && (LocationOptions as any).BEFORE) ? (LocationOptions as any).BEFORE : 1650812527;
+        const locAfter = (typeof LocationOptions !== "undefined" && (LocationOptions as any).AFTER) ? (LocationOptions as any).AFTER : 1634104421;
+        const locAtBeginning = (typeof LocationOptions !== "undefined" && (LocationOptions as any).AT_BEGINNING) ? (LocationOptions as any).AT_BEGINNING : 1635017319;
+        const locAtEnd = (typeof LocationOptions !== "undefined" && (LocationOptions as any).AT_END) ? (LocationOptions as any).AT_END : 1635018094;
 
         // Explicitly enforce Z-index stacking order: Foreground (top), Cover Options (middle), Background (bottom)
         const fg = doc.layers.itemByName ? doc.layers.itemByName("Foreground") : null;
         const cov = doc.layers.itemByName ? doc.layers.itemByName("Master: expand for cover options") : null;
         const bg = doc.layers.itemByName ? doc.layers.itemByName("Background") : null;
 
-        if (fg && fg.isValid) {
-          try { (fg as any).move(1634101602); } catch (_) { // AT_BEGINNING
-            try { if (doc.layers.length > 0 && doc.layers[0] !== fg) (fg as any).move(1650812527, doc.layers[0]); } catch (_) {}
-          }
-        }
+        // 1. Move Background to the very bottom
         if (bg && bg.isValid) {
-          try { (bg as any).move(1634101614); } catch (_) { // AT_END
-            try { if (doc.layers.length > 0 && doc.layers[doc.layers.length - 1] !== bg) (bg as any).move(1634104421, doc.layers[doc.layers.length - 1]); } catch (_) {}
+          try {
+            (bg as any).move(locAtEnd);
+          } catch (_) {
+            try {
+              if (doc.layers.length > 1 && doc.layers[doc.layers.length - 1] !== bg) {
+                (bg as any).move(locAfter, doc.layers[doc.layers.length - 1]);
+              }
+            } catch (_) {}
           }
         }
-        if (cov && cov.isValid && fg && fg.isValid) {
-          try { (cov as any).move(1634104421, fg); } catch (_) {} // AFTER fg
+
+        // 2. Move Cover Options right above Background (BEFORE bg)
+        if (cov && cov.isValid && bg && bg.isValid) {
+          try {
+            (cov as any).move(locBefore, bg);
+          } catch (_) {}
+        }
+
+        // 3. Move Foreground to the very top (AT_BEGINNING / BEFORE doc.layers[0])
+        if (fg && fg.isValid) {
+          try {
+            (fg as any).move(locAtBeginning);
+          } catch (_) {
+            try {
+              if (doc.layers.length > 0 && doc.layers[0] !== fg) {
+                (fg as any).move(locBefore, doc.layers[0]);
+              }
+            } catch (_) {}
+          }
+          try { doc.activeLayer = fg; } catch (_) {}
         }
 
         // Clean up remaining empty unused layers that aren't the 3 official layers
@@ -238,7 +270,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           }
         }
 
-        report.details.push("Enforced layer stratification from layout plan.");
+        report.details.push("Enforced layer stratification from layout plan (Foreground > Cover Options > Background).");
       } catch (err: any) {
         if (options.failurePolicy === "strict") throw err;
         report.skippedCount++;
@@ -350,9 +382,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           // 5. Create new master spread if not adopted
           if (!foundMaster && !options.dryRun) {
             try {
-              const newM = mPlan.isSinglePage
-                ? (doc.masterSpreads.add(1) || doc.masterSpreads.add())
-                : doc.masterSpreads.add();
+              const newM = doc.masterSpreads.add();
               if (newM && newM.isValid) {
                 try { if (newM.baseName !== mPlan.baseName) newM.baseName = mPlan.baseName; } catch (_) {}
                 try { if (newM.namePrefix !== mPlan.prefix) newM.namePrefix = mPlan.prefix; } catch (_) {}
@@ -367,24 +397,17 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
             // ENFORCE SINGLE-PAGE SPREADS ON COVER AND BACK (remove left/verso page in facing pages)
             if (mPlan.isSinglePage && !options.dryRun && foundMaster.pages) {
-              let mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
-              while (mPages.length > 1) {
-                try {
-                  mPages[0].remove();
-                  mPages = foundMaster.pages.everyItem ? foundMaster.pages.everyItem().getElements() : (foundMaster.pages || []);
-                } catch (_) {
-                  try {
-                    const freshSingle = doc.masterSpreads.add(1);
-                    if (freshSingle && freshSingle.isValid) {
-                      try { foundMaster.remove(); } catch (_) {}
-                      freshSingle.namePrefix = mPlan.prefix;
-                      freshSingle.baseName = mPlan.baseName;
-                      foundMaster = freshSingle;
-                    }
-                  } catch (_) {}
-                  break;
+              try {
+                while (foundMaster.pages.length > 1) {
+                  if (typeof foundMaster.pages.firstItem === "function") {
+                    foundMaster.pages.firstItem().remove();
+                  } else if (foundMaster.pages[0]) {
+                    foundMaster.pages[0].remove();
+                  } else {
+                    break;
+                  }
                 }
-              }
+              } catch (_) {}
             }
 
             // Purge existing items on master pages if cleanMasters is enabled
@@ -431,25 +454,39 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           const validPrefixes = new Set(["A", "B", "C"]);
           const docPages = doc.pages ? (doc.pages.everyItem ? doc.pages.everyItem().getElements() : doc.pages) : [];
 
-          for (let m = freshMasters.length - 1; m >= 0; m--) {
+          // Break inheritance chains first so children don't lock parents from being removed
+          for (let m = 0; m < freshMasters.length; m++) {
             const cm = freshMasters[m];
-            if (!cm || !cm.isValid || validPrefixes.has(cm.namePrefix) || cm.name === "A-Cover" || cm.name === "B-Content" || cm.name === "C-Back") continue;
+            if (cm && cm.isValid && !validPrefixes.has(cm.namePrefix)) {
+              try { (cm as any).appliedMaster = null; } catch (_) {}
+            }
+          }
 
-            // Reassign any document pages using cm before removing
-            for (let p = 0; p < docPages.length; p++) {
-              const dp = docPages[p];
-              if (dp?.isValid) {
-                const curId = dp.appliedMaster ? (dp.appliedMaster.id || dp.appliedMaster.name) : null;
-                if (curId && (curId === cm.id || curId === cm.name)) {
-                  try { dp.appliedMaster = (p === 0 ? masterSpreadsMap["A"] : masterSpreadsMap["B"]); } catch (_) {}
-                }
+          // Detach document pages using any unmapped master spread
+          for (let p = 0; p < docPages.length; p++) {
+            const dp = docPages[p];
+            if (dp && dp.isValid && dp.appliedMaster && dp.appliedMaster.isValid) {
+              const curPrefix = dp.appliedMaster.namePrefix;
+              if (!validPrefixes.has(curPrefix)) {
+                try { dp.appliedMaster = (p === 0 ? masterSpreadsMap["A"] : masterSpreadsMap["B"]); } catch (_) {}
               }
             }
+          }
 
-            try { (cm as any).appliedMaster = null; } catch (_) {}
+          // Remove unmapped master spreads in reverse
+          for (let m = freshMasters.length - 1; m >= 0; m--) {
+            const cm = freshMasters[m];
+            if (!cm || !cm.isValid) continue;
+            if (validPrefixes.has(cm.namePrefix) || cm.name === "A-Cover" || cm.name === "B-Content" || cm.name === "C-Back") continue;
+
             try {
+              const pItems = cm.pageItems ? (cm.pageItems.everyItem ? cm.pageItems.everyItem().getElements() : cm.pageItems) : [];
+              for (let pi = 0; pi < pItems.length; pi++) {
+                try { if (pItems[pi].locked) pItems[pi].locked = false; } catch (_) {}
+              }
+              const oldName = cm.name;
               cm.remove();
-              report.details.push(`Removed unused master spread "${cm.name}".`);
+              report.details.push(`Removed unused master spread "${oldName}".`);
             } catch (_) {}
           }
         }
@@ -554,14 +591,11 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
         const themeName = options.theme || options.adapter?.defaultTheme || "Blue";
         const gradientName = `${themeName} - Gradient`;
         const themeGrad = doc.gradients?.itemByName ? doc.gradients.itemByName(gradientName) : null;
-        const themeColor = doc.colors?.itemByName
-          ? (doc.colors.itemByName(`${themeName} - Medium`)?.isValid
-              ? doc.colors.itemByName(`${themeName} - Medium`)
-              : doc.colors.itemByName(`${themeName} - Dark`))
-          : null;
-        const fillTarget = (themeGrad && themeGrad.isValid)
-          ? themeGrad
-          : ((themeColor && themeColor.isValid) ? themeColor : null);
+        const themeMedium = doc.colors?.itemByName ? (
+          doc.colors.itemByName(`${themeName} - Medium`)?.isValid
+            ? doc.colors.itemByName(`${themeName} - Medium`)
+            : doc.colors.itemByName(`${themeName} - Dark`)
+        ) : null;
 
         for (const mPlan of plan.masterPlans) {
           const ms = masterSpreadsMap[mPlan.prefix];
@@ -577,9 +611,20 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             for (const deco of mPlan.decorations) {
               let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(deco.layerName) : null;
               if (!dLayer || !dLayer.isValid) {
-                dLayer = doc.layers ? doc.layers[0] : null;
+                if (deco.layerName.toLowerCase().includes("master") || deco.layerName.toLowerCase().includes("cover") || deco.layerName.toLowerCase().includes("brand")) {
+                  dLayer = doc.layers.itemByName("Master: expand for cover options");
+                } else {
+                  dLayer = doc.layers.itemByName("Foreground");
+                }
               }
-              if (dLayer && dLayer.isValid) dLayer.locked = false;
+              if (!dLayer || !dLayer.isValid) dLayer = doc.layers ? doc.layers[0] : null;
+              if (dLayer && dLayer.isValid) {
+                try {
+                  dLayer.locked = false;
+                  dLayer.visible = true;
+                  doc.activeLayer = dLayer;
+                } catch (_) {}
+              }
 
               // Purge existing decoration rectangles with same label/name
               const rectContainer = targetParent.rectangles || ms.rectangles;
@@ -587,10 +632,13 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 const rects = rectContainer.everyItem().getElements();
                 for (let ri = rects.length - 1; ri >= 0; ri--) {
                   if (
-                    rects[ri].label === deco.label ||
-                    rects[ri].name === deco.name
+                    rects[ri] && rects[ri].isValid &&
+                    (rects[ri].label === deco.label || rects[ri].name === deco.name)
                   ) {
-                    try { rects[ri].remove(); } catch (_) {}
+                    try {
+                      if (rects[ri].locked) rects[ri].locked = false;
+                      rects[ri].remove();
+                    } catch (_) {}
                   }
                 }
               }
@@ -600,12 +648,10 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 if (targetParent.rectangles && typeof targetParent.rectangles.add === "function") {
                   try { rect = targetParent.rectangles.add(); } catch (_) {}
                   if (!rect) { try { rect = targetParent.rectangles.add({}); } catch (_) {} }
-                  if (!rect && dLayer && dLayer.isValid) { try { rect = targetParent.rectangles.add(dLayer); } catch (_) {} }
                 }
                 if (!rect && ms.rectangles && typeof ms.rectangles.add === "function") {
                   try { rect = ms.rectangles.add(); } catch (_) {}
                   if (!rect) { try { rect = ms.rectangles.add({}); } catch (_) {} }
-                  if (!rect && dLayer && dLayer.isValid) { try { rect = ms.rectangles.add(dLayer); } catch (_) {} }
                 }
 
                 if (rect && rect.isValid) {
@@ -637,8 +683,33 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     } catch (_) {}
                   }
 
+                  // Place linked/embedded vector asset if present (e.g. C:/Work/_footers.ai)
+                  if (deco.assetPath) {
+                    try {
+                      rect.place(deco.assetPath);
+                      if (rect.frameFittingOptions) {
+                        rect.frameFittingOptions.fittingAlignment = 1651470435; // AnchorPoint.BOTTOM_CENTER_ANCHOR
+                      }
+                      if (typeof rect.fit === "function") {
+                        rect.fit(1668249198); // FitOptions.PROPORTIONALLY
+                      }
+                      if (rect.graphics && rect.graphics.length > 0) {
+                        const placedG = rect.graphics[0];
+                        if (placedG && placedG.isValid && placedG.itemLink && placedG.itemLink.isValid) {
+                          try { placedG.itemLink.unlink(); } catch (_) {}
+                        }
+                      }
+                    } catch (_) {}
+                  }
+
                   rect.strokeWeight = deco.strokeWeight || 0;
-                  if (fillTarget) {
+                  let fillTarget: any = null;
+                  if (deco.fillColorRole === "themeMedium") {
+                    fillTarget = themeMedium;
+                  } else {
+                    fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : themeMedium;
+                  }
+                  if (fillTarget && fillTarget.isValid) {
                     try { rect.fillColor = fillTarget; } catch (_) {}
                   }
                   if (doc.swatches) {
@@ -647,6 +718,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                       : doc.swatches.item("[None]");
                     if (swatchNone && swatchNone.isValid) try { rect.strokeColor = swatchNone; } catch (_) {}
                   }
+                  report.details.push(`Injected master brand decoration "${deco.name}" on ${ms.name}.`);
                 }
               } catch (_) {}
             }
@@ -660,17 +732,26 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
             for (const edFrame of mPlan.editorialFrames) {
               let dLayer = doc.layers?.itemByName ? doc.layers.itemByName(edFrame.layerName) : null;
               if (!dLayer || !dLayer.isValid) {
-                dLayer = doc.layers ? doc.layers[0] : null;
+                dLayer = doc.layers.itemByName("Foreground") || (doc.layers ? doc.layers[0] : null);
               }
-              if (dLayer && dLayer.isValid) dLayer.locked = false;
+              if (dLayer && dLayer.isValid) {
+                try {
+                  dLayer.locked = false;
+                  dLayer.visible = true;
+                  doc.activeLayer = dLayer;
+                } catch (_) {}
+              }
 
               // Purge existing text frames with same label or name
               const tfContainer = targetParent.textFrames || ms.textFrames;
               if (tfContainer && tfContainer.everyItem) {
                 const tfs = tfContainer.everyItem().getElements();
                 for (let ti = tfs.length - 1; ti >= 0; ti--) {
-                  if (tfs[ti].label === edFrame.label || tfs[ti].name === edFrame.name) {
-                    try { tfs[ti].remove(); } catch (_) {}
+                  if (tfs[ti] && tfs[ti].isValid && (tfs[ti].label === edFrame.label || tfs[ti].name === edFrame.name)) {
+                    try {
+                      if (tfs[ti].locked) tfs[ti].locked = false;
+                      tfs[ti].remove();
+                    } catch (_) {}
                   }
                 }
               }
@@ -707,6 +788,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
                   if (edFrame.verticalJustification && tf.textFramePreferences) {
                     try { tf.textFramePreferences.verticalJustification = edFrame.verticalJustification; } catch (_) {}
+                    try { tf.textFramePreferences.insetSpacing = [10, 0, 10, 15]; } catch (_) {}
                   }
 
                   try { tf.contents = edFrame.contents; } catch (_) {}
@@ -738,8 +820,11 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
           // 7b. Inject Running Folios (B-Content left & right pages)
           if (options.injectFooters !== false && mPlan.folios && mPlan.folios.length > 0) {
-            const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers");
-            const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character");
+            const footerStyle = DomResolver.getParagraphStyleSafely(doc, "Footer", "Document") ||
+                                DomResolver.getParagraphStyleSafely(doc, "Footer", "Footers") ||
+                                DomResolver.getParagraphStyleSafely(doc, "Footer");
+            const boldStyle = DomResolver.getCharacterStyleSafely(doc, "Bold", "Character") ||
+                              DomResolver.getCharacterStyleSafely(doc, "Bold");
 
             for (let pIdx = 0; pIdx < mPages.length; pIdx++) {
               const pageEl = mPages[pIdx];
@@ -757,7 +842,14 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 // Locate or create folio layer
                 let fLayer = doc.layers?.itemByName ? doc.layers.itemByName(folio.layerName) : null;
                 if (!fLayer || !fLayer.isValid) {
-                  fLayer = doc.layers ? doc.layers[0] : null;
+                  fLayer = doc.layers.itemByName("Foreground") || (doc.layers ? doc.layers[0] : null);
+                }
+                if (fLayer && fLayer.isValid) {
+                  try {
+                    fLayer.locked = false;
+                    fLayer.visible = true;
+                    doc.activeLayer = fLayer;
+                  } catch (_) {}
                 }
 
                 // Purge existing folio frames to avoid duplicates
@@ -765,11 +857,13 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                   const tfs = pageEl.textFrames.everyItem().getElements();
                   for (let ti = tfs.length - 1; ti >= 0; ti--) {
                     if (
-                      tfs[ti].label === folio.label ||
-                      tfs[ti].label === "DynamicContentFooter" ||
-                      tfs[ti].name === folio.name
+                      tfs[ti] && tfs[ti].isValid &&
+                      (tfs[ti].label === folio.label ||
+                       tfs[ti].label === "DynamicContentFooter" ||
+                       tfs[ti].name === folio.name)
                     ) {
                       try {
+                        if (tfs[ti].locked) tfs[ti].locked = false;
                         tfs[ti].remove();
                       } catch (_) {}
                     }
@@ -779,9 +873,9 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                 try {
                   let tfFolio: any = null;
                   try {
-                    tfFolio = fLayer && fLayer.isValid ? pageEl.textFrames.add(fLayer) : pageEl.textFrames.add();
+                    tfFolio = pageEl.textFrames.add();
                   } catch (_) {
-                    try { tfFolio = pageEl.textFrames.add(); } catch (_) {}
+                    try { tfFolio = pageEl.textFrames.add({}); } catch (_) {}
                   }
 
                   if (tfFolio && tfFolio.isValid) {
@@ -801,7 +895,7 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     }
 
                     if (tfFolio.textFramePreferences) {
-                      try { tfFolio.textFramePreferences.verticalJustification = 1651471469; } catch (_) {}
+                      try { tfFolio.textFramePreferences.verticalJustification = 1651471469; } catch (_) {} // BOTTOM_ALIGN
                     }
 
                     try { tfFolio.contents = folio.text; } catch (_) {}

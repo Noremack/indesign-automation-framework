@@ -26,6 +26,7 @@ export interface MasterDecorationPlan {
   topRightCornerRadius?: number;
   bottomLeftCornerRadius?: number;
   bottomRightCornerRadius?: number;
+  assetPath?: string;
   visible?: boolean;
 }
 
@@ -250,7 +251,8 @@ export class LayoutPlanner {
           label: "DynamicBrandFooter",
           layerName: brandLayer,
           geometricBounds: [heightPt - scaledFooterH, -bleedPt, heightPt + bleedPt, widthPt + bleedPt],
-          fillColorRole: "themeGradient",
+          fillColorRole: "themeMedium",
+          assetPath: "C:/Work/_footers.ai",
           visible: true
         });
       } else if (isBack) {
@@ -273,12 +275,12 @@ export class LayoutPlanner {
         editorialFrames.push({
           name: "Back Cover Text",
           label: "DynamicBrandBackCover",
-          layerName: brandLayer,
+          layerName: headerFooterLayer,
           geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
-          contents: "13 QGOV (137468)\r\nwww.tmr.qld.gov.au | www.qld.gov.au",
+          contents: "13 Queensland Government (QGOV) (137468)\r\nwww.tmr.qld.gov.au | www.qld.gov.au",
           paragraphStyleName: "Footer Reverse",
           characterStyleName: "Bold Reverse",
-          characterRange: [0, 15],
+          characterRange: [0, 44],
           justification: 1919379572, // Justification.RIGHT_ALIGN
           verticalJustification: 1667591796 // VerticalJustification.CENTER_ALIGN
         });
@@ -375,7 +377,7 @@ export class LayoutPlanner {
     // 4. Layer Stratification Plan
     const layers: LayerStratificationPlan[] = [
       { name: params.layerNames?.content || "Artwork / Content", color: 1768846950 },
-      { name: headerFooterLayer, color: 1684366699 },
+      { name: params.layerNames?.headersFooters || "Headers & Footers", color: 1684366699 },
       { name: params.layerNames?.brandAssets || "Brand Assets / Badges", color: 1836016741 }
     ];
 

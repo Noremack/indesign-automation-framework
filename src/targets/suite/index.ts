@@ -250,7 +250,8 @@ export function main(): void {
           cleanMasters: config.runLayout,
           enforceMargins: config.runLayout,
           remapBodyPages: config.runLayout,
-          injectFooters: config.runLayout
+          injectFooters: config.runLayout,
+          injectDecorations: config.runLayout
         },
         brandEngineOptions: {
           theme: config.theme as any,

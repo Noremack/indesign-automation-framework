@@ -69,6 +69,13 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     if (!targetLayer || !targetLayer.isValid) {
       targetLayer = doc.layers[0] || doc.activeLayer;
     }
+    if (targetLayer && targetLayer.isValid) {
+      try {
+        targetLayer.locked = false;
+        targetLayer.visible = true;
+        doc.activeLayer = targetLayer;
+      } catch (_) {}
+    }
 
     // 2. Clear Existing Specimen Frames (Backwards sweep)
     const dynamicLabel = adapter ? `${adapter.tenantId}_BrandSpecimen` : "DynamicBrandSpecimen";
@@ -146,7 +153,11 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     let tf: any = null;
     try {
       if (targetLayer && targetLayer.isValid) {
-        try { targetLayer.locked = false; targetLayer.visible = true; } catch (_) {}
+        try {
+          targetLayer.locked = false;
+          targetLayer.visible = true;
+          doc.activeLayer = targetLayer;
+        } catch (_) {}
       }
       if (targetPage.textFrames && typeof targetPage.textFrames.add === "function") {
         try { tf = targetPage.textFrames.add(); } catch (_) {}
@@ -162,13 +173,17 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
         tf.label = dynamicLabel;
         tf.name = specimenName;
 
+        // Apply column object style if present
+        const colStyle = DomResolver.getObjectStyleSafely(doc, "Columns - X-Small", "Text Frame Columns") ||
+                         DomResolver.getObjectStyleSafely(doc, "Columns - X-Small");
+        if (colStyle && colStyle.isValid) {
+          try { tf.appliedObjectStyle = colStyle; } catch (_) {}
+        }
+
         // Configure multi-column layout for wider formats
         if (tf.textFramePreferences) {
-          if (pageWidth > 500) {
-            tf.textFramePreferences.textColumnCount = 2;
-          } else {
-            tf.textFramePreferences.textColumnCount = 1;
-          }
+          const specimenColumns = pageWidth < 312 ? 1 : (pageWidth < 567 ? 2 : 3);
+          try { tf.textFramePreferences.textColumnCount = specimenColumns; } catch (_) {}
         }
 
         // Clear stroke and fill
@@ -193,14 +208,26 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     let specimenDefs: Array<{ text: string; style: string }> = [];
     if (adapter && adapter.getSpecimenStyles().length > 0) {
       specimenDefs = adapter.getSpecimenStyles();
-    } else if (adapter && adapter.getParagraphStyles().length > 0) {
-      const declared = adapter.getParagraphStyles();
-      specimenDefs = declared.slice(0, 10).map(s => ({
-        text: `${s.name.split("/").pop()?.trim()} — ${tenantName} Visual Standard`,
-        style: s.name
-      }));
     } else {
-      specimenDefs = (QGDS_BRAND_TOKENS as any).specimenStyles || [];
+      specimenDefs = [
+        { text: "Title", style: "Title" },
+        { text: "Subtitle", style: "Subtitle" },
+        { text: "Heading 1", style: "H1 - Title" },
+        { text: "Heading 2", style: "H2 - Section" },
+        { text: "Heading 3", style: "H3 - Subsection" },
+        { text: "Heading 4", style: "H4 - Minor" },
+        { text: "Lead Paragraph — Connecting regional communities through accessible, reliable transport.", style: "Lead Paragraph" },
+        { text: "Body Text — The Queensland Government is investing in long-term infrastructure to improve regional connectivity.", style: "Body Text" },
+        { text: "Body Text No Spacing — Supporting sustainable economic prosperity across Queensland.", style: "Body Text No Spacing" },
+        { text: "Small Text — Refer to departmental publication standards for further technical guidance.", style: "Small" },
+        { text: "Figure caption — Figure 1.1 Regional Corridor Infrastructure Map", style: "Caption" },
+        { text: "Notes — Subject to executive review and environmental certification.", style: "Notes" },
+        { text: "Footer — 13 Queensland Government (QGOV) (137468)", style: "Footer" },
+        { text: "• First key strategic milestone", style: "List Bullet 1" },
+        { text: "• Secondary delivery metric", style: "List Bullet 2" },
+        { text: "1. Phase 1 procurement and site survey", style: "List Number 1" },
+        { text: "2. Phase 2 detailed civil engineering", style: "List Number 2" }
+      ];
     }
 
     if (specimenDefs.length > 0) {
