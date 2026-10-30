@@ -233,22 +233,20 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
           }
         }
 
-        // 2. Move Cover Options right above Background (BEFORE bg)
-        if (cov && cov.isValid && bg && bg.isValid) {
+        // 2. Move Cover Options right above Background (BEFORE doc.layers[0])
+        if (cov && cov.isValid && doc.layers && doc.layers.length > 0) {
           try {
-            (cov as any).move(locBefore, bg);
+            (cov as any).move(locBefore, doc.layers[0]);
           } catch (_) {}
         }
 
-        // 3. Move Foreground to the very top (AT_BEGINNING / BEFORE doc.layers[0])
-        if (fg && fg.isValid) {
+        // 3. Move Foreground to the very top (BEFORE doc.layers[0])
+        if (fg && fg.isValid && doc.layers && doc.layers.length > 0) {
           try {
-            (fg as any).move(locAtBeginning);
+            (fg as any).move(locBefore, doc.layers[0]);
           } catch (_) {
             try {
-              if (doc.layers.length > 0 && doc.layers[0] !== fg) {
-                (fg as any).move(locBefore, doc.layers[0]);
-              }
+              (fg as any).move(locAtBeginning);
             } catch (_) {}
           }
           try { doc.activeLayer = fg; } catch (_) {}
@@ -683,15 +681,17 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     } catch (_) {}
                   }
 
-                  // Place linked/embedded vector asset if present (e.g. C:/Work/_footers.ai)
+                  // Place linked/embedded vector asset if present
                   if (deco.assetPath) {
                     try {
                       rect.place(deco.assetPath);
+                      const alignment = deco.fittingAlignment || 1651470435; // AnchorPoint.BOTTOM_CENTER_ANCHOR
                       if (rect.frameFittingOptions) {
-                        rect.frameFittingOptions.fittingAlignment = 1651470435; // AnchorPoint.BOTTOM_CENTER_ANCHOR
+                        rect.frameFittingOptions.fittingAlignment = alignment;
                       }
+                      const fitMode = deco.fitOption || 1668249198; // FitOptions.PROPORTIONALLY
                       if (typeof rect.fit === "function") {
-                        rect.fit(1668249198); // FitOptions.PROPORTIONALLY
+                        rect.fit(fitMode);
                       }
                       if (rect.graphics && rect.graphics.length > 0) {
                         const placedG = rect.graphics[0];
@@ -702,15 +702,28 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     } catch (_) {}
                   }
 
-                  rect.strokeWeight = deco.strokeWeight || 0;
-                  let fillTarget: any = null;
-                  if (deco.fillColorRole === "themeMedium") {
-                    fillTarget = themeMedium;
-                  } else {
-                    fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : themeMedium;
+                  if (deco.visible !== undefined) {
+                    try { rect.visible = deco.visible; } catch (_) {}
                   }
-                  if (fillTarget && fillTarget.isValid) {
-                    try { rect.fillColor = fillTarget; } catch (_) {}
+
+                  rect.strokeWeight = deco.strokeWeight || 0;
+                  if (deco.fillColorRole !== "none") {
+                    let fillTarget: any = null;
+                    if (deco.fillColorRole === "themeMedium") {
+                      fillTarget = themeMedium;
+                    } else {
+                      fillTarget = (themeGrad && themeGrad.isValid) ? themeGrad : themeMedium;
+                    }
+                    if (fillTarget && fillTarget.isValid) {
+                      try { rect.fillColor = fillTarget; } catch (_) {}
+                    }
+                  } else if (doc.swatches) {
+                    const swatchNone = doc.swatches.item("None")?.isValid
+                      ? doc.swatches.item("None")
+                      : doc.swatches.item("[None]");
+                    if (swatchNone && swatchNone.isValid) {
+                      try { rect.fillColor = swatchNone; } catch (_) {}
+                    }
                   }
                   if (doc.swatches) {
                     const swatchNone = doc.swatches.item("None")?.isValid
@@ -832,6 +845,23 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
 
               const isLeftPage = pIdx === 0 && mPages.length > 1;
 
+              // Purge existing folio frames once for this page before creating new folios
+              if (pageEl.textFrames.everyItem) {
+                const tfs = pageEl.textFrames.everyItem().getElements();
+                for (let ti = tfs.length - 1; ti >= 0; ti--) {
+                  if (
+                    tfs[ti] && tfs[ti].isValid &&
+                    (tfs[ti].label === "DynamicContentFooter" ||
+                     (tfs[ti].name && tfs[ti].name.startsWith("Content Footer")))
+                  ) {
+                    try {
+                      if (tfs[ti].locked) tfs[ti].locked = false;
+                      tfs[ti].remove();
+                    } catch (_) {}
+                  }
+                }
+              }
+
               for (const folio of mPlan.folios) {
                 // Filter by side if spread
                 if (mPages.length > 1) {
@@ -850,24 +880,6 @@ export class QgdsLayoutEngineService extends BaseService<LayoutEngineOptions, La
                     fLayer.visible = true;
                     doc.activeLayer = fLayer;
                   } catch (_) {}
-                }
-
-                // Purge existing folio frames to avoid duplicates
-                if (pageEl.textFrames.everyItem) {
-                  const tfs = pageEl.textFrames.everyItem().getElements();
-                  for (let ti = tfs.length - 1; ti >= 0; ti--) {
-                    if (
-                      tfs[ti] && tfs[ti].isValid &&
-                      (tfs[ti].label === folio.label ||
-                       tfs[ti].label === "DynamicContentFooter" ||
-                       tfs[ti].name === folio.name)
-                    ) {
-                      try {
-                        if (tfs[ti].locked) tfs[ti].locked = false;
-                        tfs[ti].remove();
-                      } catch (_) {}
-                    }
-                  }
                 }
 
                 try {

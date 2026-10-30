@@ -27,6 +27,8 @@ export interface MasterDecorationPlan {
   bottomLeftCornerRadius?: number;
   bottomRightCornerRadius?: number;
   assetPath?: string;
+  fittingAlignment?: number;
+  fitOption?: number;
   visible?: boolean;
 }
 
@@ -228,6 +230,17 @@ export class LayoutPlanner {
       const folios: FolioPlan[] = [];
       const editorialFrames: MasterEditorialFramePlan[] = [];
 
+      const textureAssetPath = orientation === "landscape"
+        ? "C:/Work/EPS/texture-landscape.eps"
+        : "C:/Work/EPS/texture-portrait.eps";
+
+      const fmt = matchedFormat || "A4";
+      const footerPathQ = `C:/Work/EPS/footer-${fmt}-${orientation}-with-margin-Q.eps`;
+      const footerPathQQR = `C:/Work/EPS/footer-${fmt}-${orientation}-with-margin-Q-QR.eps`;
+      const footerPathBA = `C:/Work/EPS/footer-${fmt}-${orientation}-with-margin-BA.eps`;
+      const footerPathBAQR = `C:/Work/EPS/footer-${fmt}-${orientation}-with-margin-BA-QR-Wordmark.eps`;
+      const footerPathDRFA = `C:/Work/EPS/footer-${fmt}-${orientation}-with-margin-DRFA-Wordmark.eps`;
+
       if (isCover) {
         // 1. Cover Header: Brand bar - Small
         const scaledHeaderH = Math.max(25, (12 / this.PT_TO_MM) * scalingFactor);
@@ -241,19 +254,102 @@ export class LayoutPlanner {
           objectStyleGroup: "Frames - Radius Large",
           bottomRightCornerOption: 1852797549, // ROUNDED_CORNER
           bottomRightCornerRadius: 22.68 * scalingFactor,
+          assetPath: textureAssetPath,
+          fittingAlignment: 1651470451, // AnchorPoint.TOP_CENTER_ANCHOR
+          fitOption: 1668247664, // FitOptions.FILL_PROPORTIONALLY
           visible: true
         });
 
-        // 2. Cover Footer Banner
-        const scaledFooterH = Math.max(35, heightPt * 0.10);
+        // 2. Cover Header: Brand bar - Large (alternative cover option, hidden by default)
+        const scaledLargeH = Math.min(heightPt * 0.6, (180 / this.PT_TO_MM) * scalingFactor);
         decorations.push({
-          name: "Cover Footer Banner",
+          name: "Brand bar - Large",
+          label: "DynamicBrandHeader",
+          layerName: brandLayer,
+          geometricBounds: [-bleedPt, -bleedPt, scaledLargeH, widthPt - marginPt],
+          fillColorRole: "themeGradient",
+          objectStyleName: "Medium - Rounded Bottom Right",
+          objectStyleGroup: "Frames - Radius Large",
+          bottomRightCornerOption: 1852797549, // ROUNDED_CORNER
+          bottomRightCornerRadius: 22.68 * scalingFactor,
+          assetPath: textureAssetPath,
+          fittingAlignment: 1651470451, // AnchorPoint.TOP_CENTER_ANCHOR
+          fitOption: 1668247664, // FitOptions.FILL_PROPORTIONALLY
+          visible: false
+        });
+
+        // 3. Cover Footer Variants (Q, Q-QR, BA, BA-QR, DRFA)
+        const scaledFooterH = Math.max(35, heightPt * 0.10);
+        const footerBounds: [number, number, number, number] = [
+          heightPt - scaledFooterH,
+          -bleedPt,
+          heightPt + bleedPt,
+          widthPt + bleedPt
+        ];
+
+        // Active variant: Q
+        decorations.push({
+          name: "Footer Variant: Q",
           label: "DynamicBrandFooter",
           layerName: brandLayer,
-          geometricBounds: [heightPt - scaledFooterH, -bleedPt, heightPt + bleedPt, widthPt + bleedPt],
-          fillColorRole: "themeMedium",
-          assetPath: "C:/Work/_footers.ai",
+          geometricBounds: footerBounds,
+          fillColorRole: "none",
+          assetPath: footerPathQ,
+          fittingAlignment: 1651470435, // AnchorPoint.BOTTOM_CENTER_ANCHOR
+          fitOption: 1668249198, // FitOptions.PROPORTIONALLY
           visible: true
+        });
+
+        // Alternative variant: Q-QR (hidden)
+        decorations.push({
+          name: "Footer Variant: Q-QR",
+          label: "DynamicBrandFooter",
+          layerName: brandLayer,
+          geometricBounds: footerBounds,
+          fillColorRole: "none",
+          assetPath: footerPathQQR,
+          fittingAlignment: 1651470435,
+          fitOption: 1668249198,
+          visible: false
+        });
+
+        // Alternative variant: BA (hidden)
+        decorations.push({
+          name: "Footer Variant: BA",
+          label: "DynamicBrandFooter",
+          layerName: brandLayer,
+          geometricBounds: footerBounds,
+          fillColorRole: "none",
+          assetPath: footerPathBA,
+          fittingAlignment: 1651470435,
+          fitOption: 1668249198,
+          visible: false
+        });
+
+        // Alternative variant: BA-QR (hidden)
+        decorations.push({
+          name: "Footer Variant: BA-QR",
+          label: "DynamicBrandFooter",
+          layerName: brandLayer,
+          geometricBounds: footerBounds,
+          fillColorRole: "none",
+          assetPath: footerPathBAQR,
+          fittingAlignment: 1651470435,
+          fitOption: 1668249198,
+          visible: false
+        });
+
+        // Alternative variant: DRFA (hidden)
+        decorations.push({
+          name: "Footer Variant: DRFA",
+          label: "DynamicBrandFooter",
+          layerName: brandLayer,
+          geometricBounds: footerBounds,
+          fillColorRole: "none",
+          assetPath: footerPathDRFA,
+          fittingAlignment: 1651470435,
+          fitOption: 1668249198,
+          visible: false
         });
       } else if (isBack) {
         // Back Cover Element: Back Cover Background
@@ -268,6 +364,9 @@ export class LayoutPlanner {
           objectStyleGroup: "Frames - Radius Large",
           topLeftCornerOption: 1852797549, // ROUNDED_CORNER
           topLeftCornerRadius: 22.68 * scalingFactor,
+          assetPath: textureAssetPath,
+          fittingAlignment: 1651470451, // AnchorPoint.TOP_CENTER_ANCHOR
+          fitOption: 1668247664, // FitOptions.FILL_PROPORTIONALLY
           visible: true
         });
 
@@ -277,10 +376,10 @@ export class LayoutPlanner {
           label: "DynamicBrandBackCover",
           layerName: headerFooterLayer,
           geometricBounds: [heightPt - scaledBackCoverH, marginPt, heightPt + bleedPt, widthPt + bleedPt],
-          contents: "13 Queensland Government (QGOV) (137468)\r\nwww.tmr.qld.gov.au | www.qld.gov.au",
+          contents: "13 QGOV (137468)\r\nwww.tmr.qld.gov.au | www.qld.gov.au",
           paragraphStyleName: "Footer Reverse",
           characterStyleName: "Bold Reverse",
-          characterRange: [0, 44],
+          characterRange: [0, 15],
           justification: 1919379572, // Justification.RIGHT_ALIGN
           verticalJustification: 1667591796 // VerticalJustification.CENTER_ALIGN
         });

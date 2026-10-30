@@ -134,13 +134,12 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     const footerOffset = Math.max(0, pageHeight * 0.08);
 
     const top = pB[0] + mTop + headerOffset;
-    const bottom = pB[2] - mBottom - footerOffset;
+    let bottom = pB[2] - mBottom - footerOffset;
     const left = pB[1] + mLeft;
     const right = pB[3] - mRight;
 
     if (bottom <= top) {
-      report.details.push("Calculated specimen bounds are collapsed or invalid.");
-      return report;
+      bottom = top + Math.max(150, pageHeight * 0.5);
     }
 
     if (options.dryRun) {
@@ -159,13 +158,22 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
           doc.activeLayer = targetLayer;
         } catch (_) {}
       }
-      if (targetPage.textFrames && typeof targetPage.textFrames.add === "function") {
-        try { tf = targetPage.textFrames.add(); } catch (_) {}
-        if (!tf) { try { tf = targetPage.textFrames.add({}); } catch (_) {} }
-      }
-      if (!tf && targetPage.parent && targetPage.parent.textFrames && typeof targetPage.parent.textFrames.add === "function") {
-        try { tf = targetPage.parent.textFrames.add(); } catch (_) {}
-        if (!tf) { try { tf = targetPage.parent.textFrames.add({}); } catch (_) {} }
+      try {
+        tf = targetPage.textFrames.add(targetLayer);
+      } catch (_) {
+        try { tf = targetPage.textFrames.add(); } catch (_) {
+          try {
+            if (targetPage.parent && targetPage.parent.textFrames) {
+              tf = targetPage.parent.textFrames.add(targetLayer);
+            }
+          } catch (_) {
+            try { tf = targetPage.parent.textFrames.add(); } catch (_) {
+              try { tf = doc.textFrames.add(targetLayer); } catch (_) {
+                try { tf = doc.textFrames.add(); } catch (_) {}
+              }
+            }
+          }
+        }
       }
       if (tf && tf.isValid) {
         if (targetLayer && targetLayer.isValid) try { tf.itemLayer = targetLayer; } catch (_) {}
@@ -205,9 +213,11 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     }
 
     // 5. Ingest Specimen Paragraph Content & Styles
-    let specimenDefs: Array<{ text: string; style: string }> = [];
+    let specimenDefs: ReadonlyArray<{ text: string; style: string }> = [];
     if (adapter && adapter.getSpecimenStyles().length > 0) {
       specimenDefs = adapter.getSpecimenStyles();
+    } else if (QGDS_BRAND_TOKENS.specimenStyles && QGDS_BRAND_TOKENS.specimenStyles.length > 0) {
+      specimenDefs = QGDS_BRAND_TOKENS.specimenStyles;
     } else {
       specimenDefs = [
         { text: "Title", style: "Title" },
@@ -271,6 +281,46 @@ export class QgdsSpecimenService extends BaseService<SpecimenOptions, SpecimenRe
     }
 
     doc.recompose();
+    if (tf && tf.isValid && tf.overflows) {
+      try {
+        let page2: any = null;
+        if (doc.pages && doc.pages.length > 1) {
+          page2 = doc.pages[1];
+        } else if (doc.pages && typeof doc.pages.add === "function") {
+          page2 = doc.pages.add();
+        }
+        if (page2 && page2.isValid) {
+          let tf2: any = null;
+          try { tf2 = page2.textFrames.add(targetLayer); } catch (_) {
+            try { tf2 = page2.textFrames.add(); } catch (_) {}
+          }
+          if (tf2 && tf2.isValid) {
+            try { tf2.geometricBounds = [top, left, bottom, right]; } catch (_) {}
+            try { tf2.name = specimenName; } catch (_) {}
+            try { tf2.label = dynamicLabel; } catch (_) {}
+            const colStyle = DomResolver.getObjectStyleSafely(doc, "Columns - X-Small", "Text Frame Columns") ||
+                             DomResolver.getObjectStyleSafely(doc, "Columns - X-Small");
+            if (colStyle && colStyle.isValid) {
+              try { tf2.appliedObjectStyle = colStyle; } catch (_) {}
+            }
+            if (tf2.textFramePreferences) {
+              const specimenColumns = pageWidth < 312 ? 1 : (pageWidth < 567 ? 2 : 3);
+              try { tf2.textFramePreferences.textColumnCount = specimenColumns; } catch (_) {}
+            }
+            const swNone = doc.swatches.itemByName("[None]") || doc.swatches.itemByName("None");
+            if (swNone && swNone.isValid) {
+              try { tf2.fillColor = swNone; } catch (_) {}
+              try { tf2.strokeColor = swNone; } catch (_) {}
+            }
+            try { tf2.strokeWeight = 0; } catch (_) {}
+            try { tf.nextTextFrame = tf2; } catch (_) {}
+            report.specimenFramesCreated++;
+            report.details.push("Threaded overflow specimen text frame to Page 2.");
+            doc.recompose();
+          }
+        }
+      } catch (_) {}
+    }
     return report;
   }
 
